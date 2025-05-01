@@ -10,7 +10,7 @@
 
 Cloi is a local, context-aware agent designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
 
-**Disclaimer:** Cloi CLI is an experimental project under beta development. It may contain bugs, and we recommend reviewing all changes before accepting agentic suggestions. That said, help us improve Cloi by filing issues or submitting PRs, see down below for more info.
+**Disclaimer:** Cloi is an experimental project under beta development. It may contain bugs, and we recommend reviewing all changes before accepting agentic suggestions. That said, help us improve Cloi by filing issues or submitting PRs, see down below for more info.
 
 ## Installation
 
@@ -37,23 +37,36 @@ cloi
 /exit     - Quit
 ```
 
+### Why use Cloi?
+
+Cloi is built for developers who live in the terminal and value privacy:
+
+- **Local-first & Private** – All LLM calls run through Ollama on *your* machine. Your source code and command history never leave your laptop and no API key is required.
+- **Agentic Debugging Loop** – Invoke `/debug` to let Cloi run the failing command, analyze the traceback, and iteratively propose terminal fixes *or* code patches until the error disappears.
+- **Safe by Design** – Every code change is surfaced as a unified diff. You decide whether to apply it or roll it back.
+- **Lightweight Models** – Ships with the Phi-4 model for fast, offline reasoning. Swap in any other Ollama model when you need extra horsepower.
+- **Open Source & Extensible** – Written in Node.js/ESM with a modular architecture (LLM, UI, patch pipeline). Fork it, add your own commands, and help shape the future of local AI debugging.
+
 ### System Requirements
 
-### Hardware
-- **Memory:** Minimum 8GB RAM (16GB+ recommended for Ollama models)
-- **Storage:** 2GB+ free disk space for models (phi4 requires ~1.5GB)
-- **Processor:** Multi-core CPU (M1/M2/M3/Intel i5+ recommended)
-
-### Software
-- **Operating System:**
-  - Optimized for macOS (Big Sur 11.0+)
-  - Compatible with Linux (limited testing)
-  - Windows support (limited testing)
-- **Prerequisites:**
-  - Node.js 14+
-  - Python 3.6+
-- **Dependencies:**
-  - Ollama (automatically installed if not detected)
+<table>
+<tr>
+  <td><b>🖥️ Hardware</b></td>
+  <td>
+    • <b>Memory:</b> 8GB RAM minimum (16GB+ recommended)<br>
+    • <b>Storage:</b> 10GB+ free space (Phi-4 model: ~9.1GB)<br>
+    • <b>Processor:</b> Multi-core CPU (M1/M2/M3/Intel i5+ recommended)
+  </td>
+</tr>
+<tr>
+  <td><b>💻 Software</b></td>
+  <td>
+    • <b>OS:</b> macOS (Big Sur 11.0+), Linux and Windows (limited testing)<br>
+    • <b>Runtime:</b> Node.js 14+ and Python 3.6+<br>
+    • <b>Dependencies:</b> Ollama (automatically installed if needed)
+  </td>
+</tr>
+</table>
 
 ### Beta Features
 
