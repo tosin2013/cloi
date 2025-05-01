@@ -1,4 +1,4 @@
-# <div align="center">Cloi CLI (beta preview)</div>
+# <div align="center">cloi CLI (beta preview)</div>
 
 <div align="center">Local debugging agent that runs in your terminal</div>
 
