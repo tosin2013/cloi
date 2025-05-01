@@ -1,31 +1,26 @@
-# Cloi CLI
+# <div align="center">Cloi CLI (beta preview)</div>
 
-> Your Local AI Debugging Assistant
+<div align="center">Local debugging agent that runs in your terminal</div>
+
+<br>
 
 <div align="center"><img src="demo.gif" alt="Cloi CLI Demo" /></div>
 
 ## Overview
 
-Cloi is a local, context-aware AI assistant designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
+cloi is a local, context-aware AI assistant designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
+
+**Disclaimer:** Cloi CLI is an experimental project under beta development. It may contain bugs or undergo breaking changes. Contributions welcome!
 
 ![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-blue)
 ![Code Changes](https://img.shields.io/badge/code%20changes-beta-orange)
-
-> **Disclaimer:** Cloi CLI is an experimental project under active development. It may contain bugs or undergo breaking changes. Contributions welcome!
 
 ## Installation
 
 ```bash
 # Install globally (recommended)
 npm install -g @cloi-ai/cloi
-
-# Or run with npx
-npx @cloi-ai/cloi
 ```
-
-Cloi will automatically detect if Ollama is installed on your system and install it if necessary. It will also download the default language model (phi4) required for analysis.
-
-## Usage
 
 ### Basic Command
 ```bash
@@ -63,7 +58,7 @@ cloi
 
 ## Beta Features
 
-> **Beta Feature Notice:** The `cloi fix` command is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
+> **Beta Feature Notice:** The `/debug` command is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
 > - Reviewing all suggested changes before accepting them
 > - Testing the changes in a development environment first
 > - Keeping backups of your code before using automated fixes
