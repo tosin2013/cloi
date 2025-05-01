@@ -8,12 +8,9 @@
 
 ## Overview
 
-cloi is a local, context-aware AI assistant designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
+Cloi is a local, context-aware agent designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
 
-**Disclaimer:** Cloi CLI is an experimental project under beta development. It may contain bugs or undergo breaking changes. Contributions welcome!
-
-![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-blue)
-![Code Changes](https://img.shields.io/badge/code%20changes-beta-orange)
+**Disclaimer:** Cloi CLI is an experimental project under beta development. It may contain bugs or undergo breaking changes. Contributions welcome, read more down below.
 
 ## Installation
 
@@ -22,9 +19,11 @@ cloi is a local, context-aware AI assistant designed to streamline your debuggin
 npm install -g @cloi-ai/cloi
 ```
 
-### Basic Command
+**No API key needed! No cost to run locally.**
+
+Navigate to your project directory and call cloi when you run into an error.
+
 ```bash
-# Start interactive mode
 cloi
 ```
 
@@ -37,7 +36,7 @@ cloi
 /exit     - Quit
 ```
 
-## System Requirements
+### System Requirements
 
 ### Hardware
 - **Memory:** Minimum 8GB RAM (16GB+ recommended for Ollama models)
@@ -52,36 +51,20 @@ cloi
 - **Prerequisites:**
   - Node.js 14+
   - Python 3.6+
-  - zsh shell
 - **Dependencies:**
   - Ollama (automatically installed if not detected)
 
-## Beta Features
+### Beta Features
 
 > **Beta Feature Notice:** The `/debug` command is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
 > - Reviewing all suggested changes before accepting them
 > - Testing the changes in a development environment first
 > - Keeping backups of your code before using automated fixes
-> - Reporting any issues or unexpected behavior
 
-## Benchmarks
-
-Cloi has been benchmarked against leading debugging tools. Below is a comparison:
-
-*Benchmarks conducted on macOS [14.3], Apple [M2] MacBook Air, [24GB RAM].*
-
-| Feature | cloi | Warp | OpenAI Codex | Claude Code | Cursor | Windsurf |
-|---------|------|------|--------------|-------------|--------|----------|
-| Cost | Free | $40/month | $0.10/1K tokens | $3/1M input tokens, $15/1M output​ tokens | $20/month | $15/month + $10/250 creds |
-| Local Processing | Yes | No | No | No | Partial | No |
-| Offline Support | Yes | Limited | No | No | Limited | No |
-| Analysis Time* | 10s | 10s | 10s | 10s | 10s | 10s |
-
-## Contributing
+### Contributing
 
 We welcome contributions from the community! By contributing to this project, you agree to the following guidelines:
 
-### Guidelines
 - **Scope:** Contributions should align with the project's goals of providing a secure, local AI debugging assistant
 - **Non-Commercial Use:** All contributions must adhere to the CC BY-NC 4.0 license
 - **Attribution:** Please ensure proper attribution for any third-party work
@@ -102,14 +85,3 @@ We welcome contributions from the community! By contributing to this project, yo
 6. Review Process: Your PR will be reviewed, and feedback may be provided
 
 For more detailed information on contributing, please refer to the CONTRIBUTING.md file.
-
-## License
-
-This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0).
-
-**Summary:**
-- **Attribution Required:** You must give appropriate credit, provide a link to the license, and indicate if changes were made
-- **NonCommercial:** You may not use the material for commercial purposes
-- **No Additional Restrictions:** You may not apply legal terms or technological measures that legally restrict others from doing anything the license permits
-
-For the full license text, please refer to the [Creative Commons website](https://creativecommons.org/licenses/by-nc/4.0/).
