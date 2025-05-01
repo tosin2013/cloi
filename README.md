@@ -41,11 +41,11 @@ cloi
 
 Cloi is built for developers who live in the terminal and value privacy:
 
-- **Local-first & Private** – All LLM calls run through Ollama on *your* machine. Your source code and command history never leave your laptop and no API key is required.
-- **Agentic Debugging Loop** – Invoke `/debug` to let Cloi run the failing command, analyze the traceback, and iteratively propose terminal fixes *or* code patches until the error disappears.
-- **Safe by Design** – Every code change is surfaced as a unified diff. You decide whether to apply it or roll it back.
-- **Lightweight Models** – Ships with the Phi-4 model for fast, offline reasoning. Swap in any other Ollama model when you need extra horsepower.
-- **Open Source & Extensible** – Written in Node.js/ESM with a modular architecture (LLM, UI, patch pipeline). Fork it, add your own commands, and help shape the future of local AI debugging.
+- **100% Local** – Your code never leaves your machine. No API key needed.
+- **Automates Fixes** – Analyze errors and apply patches with a single command.
+- **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
+- **Lightweight** – Ships with Phi-4 model. Swap models as needed via Ollama.
+- **Open Source** – Extensible architecture. Fork, contribute, and customize to your needs.
 
 ### System Requirements
 
