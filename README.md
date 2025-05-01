@@ -10,9 +10,11 @@
 
 Cloi is a local, context-aware agent designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
 
-**Disclaimer:** Cloi CLI is an experimental project under beta development. It may contain bugs, we recommend reviewing all changes before accepting cloi's agentic suggestions. Contributions welcome, help us improve by filing issues or submitting PRs, see down below for more info.
+**Disclaimer:** Cloi CLI is an experimental project under beta development. It may contain bugs, and we recommend reviewing all changes before accepting agentic suggestions. That said, help us improve Cloi by filing issues or submitting PRs, see down below for more info.
 
 ## Installation
+
+Install globaly: 
 
 ```bash
 npm install -g @cloi-ai/cloi
@@ -46,7 +48,7 @@ cloi
 - **Operating System:**
   - Optimized for macOS (Big Sur 11.0+)
   - Compatible with Linux (limited testing)
-  - Windows support via WSL
+  - Windows support (limited testing)
 - **Prerequisites:**
   - Node.js 14+
   - Python 3.6+
