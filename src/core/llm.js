@@ -430,11 +430,11 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
     // Add instructions
     promptParts.push('Your response MUST include these sections:');
     promptParts.push('1. ERROR LOCATION: Specify the file name (example.py) and the exact line number (line 45) where you believe the error is occurring. Nothing else.');
-    promptParts.push('2. CAUSE: Explain concisely what went wrong.');
-    promptParts.push('3. FIX: Propose a concrete solution to fix the error. There might be multiple fixes for the same error, so put all in one code chunk. Do not move onto another error.');
+    promptParts.push('2. Explain **VERY** concisely what went wrong.');
+    promptParts.push('3. FIX: Propose a concrete solution to fix the error. There might be multiple fixes required for the same error, so put all in one code chunk. Do not move onto another error. No alternatives. Be final with your solution.');
     promptParts.push('');
     promptParts.push('Be precise about the error line number, even if it\'s not explicitly mentioned in the traceback.');
-    promptParts.push('Keep your explanation brief and focused on the root cause and solution. Keep it concise.');
+    promptParts.push('No to low explanation only and focused on the root cause and solution. Keep it **VERY** concise.');
     
     const prompt = promptParts.join('\n');
 
