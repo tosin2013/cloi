@@ -1,12 +1,11 @@
 # <div align="center">Cloi CLI (beta preview)</div>
 
+<div align="center">Local debugging agent that runs in your terminal</div>
+
 <div align="center">
   <img src="https://img.shields.io/badge/version-beta-yellow" alt="version" />
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-green" alt="license" />
 </div>
-
-<div align="center">Local debugging agent that runs in your terminal</div>
-
 <br>
 
 <div align="center"><img src="demo.gif" alt="Cloi CLI Demo" /></div>

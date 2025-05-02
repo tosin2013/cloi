@@ -126,16 +126,23 @@ We follow the [Conventional Commits](https://www.conventionalcommits.org/) speci
 
 ## Project Structure
 ```
-cloi/
-├── src/
-│   └── cloi/
-│       ├── core/         # Core functionality
-│       ├── commands/     # CLI commands
-│       ├── utils/        # Utility functions
-│       └── tests/        # Test files
-├── docs/                 # Documentation
-├── examples/            # Example usage
-└── scripts/             # Development scripts
+bin/
+  ├── index.js          # Main CLI entry point
+  └── cloi-setup.cjs    # Installation setup script
+src/
+  ├── ui/               # User interface components
+  │   ├── boxen.js      # Boxed UI components
+  │   └── prompt.js     # User prompts and input handling
+  ├── core/             # Core functionality
+  │   ├── command.js    # Command execution
+  │   ├── history.js    # Shell history management
+  │   ├── llm.js        # LLM interaction and analysis
+  │   └── patch.js      # Code patching utilities
+  ├── utils/            # Utility functions
+  │   ├── file.js       # File operations
+  │   └── traceback.js  # Error traceback parsing
+  └── cli/              # CLI implementation
+      └── index.js      # Main CLI logic
 ```
 
 ## License Considerations
