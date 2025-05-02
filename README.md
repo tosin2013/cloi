@@ -8,13 +8,13 @@
 
 ## Overview
 
-Cloi is a local, context-aware agent designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, cloi can analyze errors and apply fixes directly to your codebase.
+Cloi is a local, context-aware agent designed to streamline your debugging process. Operating entirely on your machine, it ensures that your code and data remain private and secure. With your permission, Cloi can analyze errors and apply fixes directly to your codebase.
 
 **Disclaimer:** Cloi is an experimental project under beta development. It may contain bugs, and we recommend reviewing all changes before accepting agentic suggestions. That said, help us improve Cloi by filing issues or submitting PRs, see down below for more info.
 
 ## Installation
 
-Install globaly: 
+Install globally: 
 
 ```bash
 npm install -g @cloi-ai/cloi
@@ -22,7 +22,7 @@ npm install -g @cloi-ai/cloi
 
 **No API key needed, runs completely locally.**
 
-Navigate to your project directory and call cloi when you run into an error.
+Navigate to your project directory and call Cloi when you run into an error.
 
 ```bash
 cloi
@@ -42,10 +42,10 @@ cloi
 Cloi is built for developers who live in the terminal and value privacy:
 
 - **100% Local** – Your code never leaves your machine. No API key needed.
-- **Automates Fixes** – Analyze errors and apply patches with a single command.
+- **Automates Fixes (Beta)** – Analyze errors and apply patches with a single command.
 - **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
 - **Lightweight** – Ships with Phi-4 model. Swap models as needed via Ollama.
-- **Open Source** – Extensible architecture. Fork, contribute, and customize to your needs.
+- **Free to Use** – Extensible architecture. Fork, contribute, and customize to your needs.
 
 ### System Requirements
 
@@ -55,7 +55,7 @@ Cloi is built for developers who live in the terminal and value privacy:
   <td>
     • <b>Memory:</b> 8GB RAM minimum (16GB+ recommended)<br>
     • <b>Storage:</b> 10GB+ free space (Phi-4 model: ~9.1GB)<br>
-    • <b>Processor:</b> Multi-core CPU (M1/M2/M3/Intel i5+ recommended)
+    • <b>Processor:</b> Tested on M2 and M3
   </td>
 </tr>
 <tr>
@@ -63,6 +63,7 @@ Cloi is built for developers who live in the terminal and value privacy:
   <td>
     • <b>OS:</b> macOS (Big Sur 11.0+), Linux and Windows (limited testing)<br>
     • <b>Runtime:</b> Node.js 14+ and Python 3.6+<br>
+    • <b>Shell:</b> Zsh, Fish, Bash (limited testing)<br>
     • <b>Dependencies:</b> Ollama (automatically installed if needed)
   </td>
 </tr>
@@ -70,7 +71,7 @@ Cloi is built for developers who live in the terminal and value privacy:
 
 ### Beta Features
 
-> **Beta Feature Notice:** The `/debug` command is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
+> **Beta Feature Notice:** The Automate Fix feature is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
 > - Reviewing all suggested changes before accepting them
 > - Testing the changes in a development environment first
 > - Keeping backups of your code before using automated fixes
@@ -98,4 +99,4 @@ We welcome contributions from the community! By contributing to this project, yo
 5. Submit a Pull Request
 6. Review Process: Your PR will be reviewed, and feedback may be provided
 
-For more detailed information on contributing, please refer to the CONTRIBUTING.md file.
+For more detailed information on contributing, please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file.

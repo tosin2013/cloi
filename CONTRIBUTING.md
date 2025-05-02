@@ -1,6 +1,6 @@
-# Contributing to cloi
+# Contributing to Cloi
 
-Thank you for your interest in contributing to cloi! This document provides guidelines and instructions for contributing to the project. Please read it carefully before submitting any contributions.
+Thank you for your interest in contributing to Cloi! This document provides guidelines and instructions for contributing to the project. Please read it carefully before submitting any contributions.
 
 ## Code of Conduct
 
@@ -184,4 +184,4 @@ Contributors will be recognized in the following ways:
 - [Black Code Style](https://black.readthedocs.io/)
 - [Pytest Documentation](https://docs.pytest.org/)
 
-Thank you for contributing to cloi!
+Thank you for contributing to Cloi!
