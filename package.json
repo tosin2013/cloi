@@ -1,6 +1,6 @@
 {
 "name": "@cloi-ai/cloi",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Security-first agentic debugging tool for the terminal",
   "main": "bin/index.js",
   "type": "module",
@@ -17,7 +17,8 @@
   "dependencies": {
     "boxen": "^8.0.1",
     "chalk": "^5.4.1",
-    "yargs": "^17.7.2"
+    "yargs": "^17.7.2",
+    "ollama": "^0.1.1"
   },
   "engines": {
     "node": ">=14.0.0"
