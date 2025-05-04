@@ -47,7 +47,7 @@ Cloi is built for developers who live in the terminal and value privacy:
 - **100% Local** – Your code never leaves your machine. No API key needed.
 - **Automates Fixes (Beta)** – Analyze errors and apply patches with a single command.
 - **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
-- **Lightweight** – Ships with Phi-4 model. Swap models as needed via Ollama.
+- **Customizable** – Ships with Phi-4 model. Swap models as needed via Ollama.
 - **Free to Use** – Extensible architecture. Fork, contribute, and customize to your needs.
 
 ### System Requirements
@@ -72,13 +72,6 @@ Cloi is built for developers who live in the terminal and value privacy:
 </tr>
 </table>
 
-### Beta Features
-
-> **Beta Feature Notice:** The Automate Fix feature is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
-> - Reviewing all suggested changes before accepting them
-> - Testing the changes in a development environment first
-> - Keeping backups of your code before using automated fixes
-
 ### Contributing
 
 We welcome contributions from the community! By contributing to this project, you agree to the following guidelines:
@@ -88,18 +81,23 @@ We welcome contributions from the community! By contributing to this project, yo
 - **Attribution:** Please ensure proper attribution for any third-party work
 - **Code of Conduct:** Be respectful and considerate in all interactions
 
-### How to Contribute
-1. Fork the Repository
-2. Create a Branch:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-3. Make Changes: Implement your changes with clear commit messages
-4. Push to Your Fork:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-5. Submit a Pull Request
-6. Review Process: Your PR will be reviewed, and feedback may be provided
-
 For more detailed information on contributing, please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file.
+
+### Patches 
+
+#### [1.0.2] May 4th, 2025
+- Feature: Integrated [structured outputs](https://ollama.com/blog/structured-outputs) Ollama's latest API - pretty neat JSON 
+outputs for more robust patches; falls back to traditional LLM calls if the structured API isn't available
+- Feature: Implemented CLI model selection via `--model` flag - specify your preferred Ollama model right from the command line (credit to [@canadaduane](https://github.com/canadaduane) for the insightful suggestion!)
+- UI Enhancement: The `/model` command now displays your locally installed Ollama models 
+- Refactor: Some internal architecture adjustments to maintain conceptual integrity
+  - Migrated `history.js` to the utils directory where it semantically belongs
+  - Repositioned `traceback.js` to core since it's foundational to the debugging pipeline
+- Improvements: Purged lingering references to our project's original name "FigAI" and cleaned the CLI `--help` interface
+
+### Beta Features
+
+> **Beta Feature Notice:** The Automate Fix feature is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
+> - Reviewing all suggested changes before accepting them
+> - Testing the changes in a development environment first
+> - Keeping backups of your code before using automated fixes

@@ -30,11 +30,11 @@ import { BOX, echoCommand, truncateOutput, createCommandBox } from '../ui/boxen.
 import { startThinking } from '../core/llm.js';
 import { askYesNo, getReadline, closeReadline} from '../ui/prompt.js';
 import { runCommand } from '../core/command.js';
-import { readHistory, lastRealCommand, selectHistoryItem } from '../core/history.js';
-import { analyzeWithLLM, determineErrorType, generateTerminalCommandFix, generatePatch, uninstallModel, selectModelItem, installModel, summarizeCodeWithLLM } from '../core/llm.js';
+import { readHistory, lastRealCommand, selectHistoryItem } from '../utils/history.js';
+import { analyzeWithLLM, determineErrorType, generateTerminalCommandFix, generatePatch, selectModelItem, installModel, summarizeCodeWithLLM, readModels, getAvailableModels } from '../core/llm.js';
 import { extractDiff, confirmAndApply } from '../core/patch.js';
 import { ensureDir, writeDebugLog } from '../utils/file.js';
-import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../utils/traceback.js';
+import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../core/traceback.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
@@ -47,14 +47,15 @@ const __dirname = dirname(__filename);
  * Manages the state (last command, current model) between interactions.
  * @param {string|null} initialCmd - The initial command to have ready for analysis/debugging.
  * @param {number} limit - The history limit to use for /history selection.
+ * @param {string} [initialModel='phi4:latest'] - The initial model to use.
  */
-async function interactiveLoop(initialCmd, limit) {
+async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') {
     let lastCmd = initialCmd;
-    let currentModel = 'phi4:latest';
+    let currentModel = initialModel;
   
     while (true) {
       console.log(boxen(
-        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
+        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')},  ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
         BOX.PROMPT
       ));
   
@@ -106,9 +107,8 @@ async function interactiveLoop(initialCmd, limit) {
         case '/help':
           console.log(boxen(
             [
-              '/debug    – auto-patch errors iteratively using LLM',
+              '/debug    – auto-patch errors using chosen LLM',
               '/model    – pick from installed Ollama models',
-              '/model -d model_name – uninstall a model',
               '/history  – pick from recent shell commands',
               '/help     – show this help',
               '/exit     – quit'
@@ -126,16 +126,7 @@ async function interactiveLoop(initialCmd, limit) {
           break;
   
         default:
-          if (input.startsWith('/model -d ')) {
-            const modelName = input.slice(10).trim();
-            if (modelName) {
-              await uninstallModel(modelName);
-            } else {
-              console.log(chalk.red('Please specify a model name to uninstall.'));
-            }
-          } else {
-            console.log(chalk.red('Unknown command. Type'), chalk.bold('/help'));
-          }
+          console.log(chalk.red('Unknown command. Type'), chalk.bold('/help'));
       }
     }
   }
@@ -336,65 +327,68 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
 /* ───────────────────────────────  Main  ──────────────────────────────── */
 
 /**
- * Main entry point for the FigAI CLI application.
+ * Main entry point for the Cloi CLI application.
  * Parses command line arguments using yargs, displays a banner,
  * and routes execution based on the provided flags (`--analyze`, `--debug`, `--history`, `model`).
  * Handles fetching the last command and initiating the appropriate loop (interactive or debug).
  */
 (async function main() {
-    const banner = chalk.blueBright.bold('FigAI') + ' — Secure Agentic Debugging Tool';
-    console.log(boxen(
-      `${banner}\n↳ model: phi4:latest\n↳ Completely local and secure`,
-      BOX.WELCOME
-    ));
-  
     const argv = yargs(hideBin(process.argv))
-      .option('history',        { alias: 'h', type: 'boolean' })
-      .option('debug',          { alias: 'd', type: 'boolean' })
-      .option('limit',          { alias: 'n', type: 'number',  default: 15 })
-      .option('no-interactive', {              type: 'boolean' })
-      .command('model', 'Manage models', {
-        delete: {
-          alias: 'd',
-          describe: 'Uninstall a model',
-          type: 'string'
-        }
+      .option('model', {
+        alias: 'm',
+        describe: 'Ollama model to use for completions',
+        default: 'phi4:14b',
+        type: 'string'
       })
       .help().alias('help', '?')
       .parse();
   
-    if (argv._[0] === 'model' && argv.delete) {
-      await uninstallModel(argv.delete);
-      return;
-    }
-  
-    if (argv.history) {
-      (await readHistory())
-        .slice(-argv.limit)
-        .forEach((cmd, i) => console.log(`${i + 1}: ${cmd}`));
-  
-      if (!argv['no-interactive']) {
-        const initial = await lastRealCommand();
-        await interactiveLoop(initial, argv.limit);
+    // Check if the specified model is installed, install if not
+    let currentModel = argv.model;
+    
+    if (currentModel) {
+      const installedModels = readModels();
+      
+      if (!installedModels.includes(currentModel)) {
+        console.log(boxen(
+          `Model ${currentModel} is not installed. Install now?\nThis may take a few minutes.\n\nProceed (y/N):`,
+          { ...BOX.CONFIRM, title: 'Model Installation' }
+        ));
+        
+        const response = await askYesNo('', true);
+        console.log(response ? 'y' : 'N');
+        
+        if (response) {
+          console.log(chalk.blue(`Installing ${currentModel}...`));
+          const success = await installModel(currentModel);
+          
+          if (!success) {
+            console.log(chalk.yellow(`Failed to install ${currentModel}. Using default model instead.`));
+            currentModel = 'phi4:latest';
+          } else {
+            console.log(chalk.green(`Successfully installed ${currentModel}.`));
+          }
+        } else {
+          console.log(chalk.yellow(`Using default model instead.`));
+          currentModel = 'phi4:latest';
+        }
       }
-      return;
     }
+    
+    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool';
+    console.log(boxen(
+      `${banner}\n↳ model: ${currentModel}\n↳ completely local and secure`,
+      BOX.WELCOME
+    ));
   
     const lastCmd = await lastRealCommand();
     if (!lastCmd) {
       console.log(chalk.yellow('No commands found in history.'));
       return;
     }
-  
-    if (argv.debug) {
-      // Skip command confirmation and directly run debug loop
-      await debugLoop(lastCmd, argv.limit, 'phi4:latest');
-    } else {
-      console.log(boxen(lastCmd, { ...BOX.WELCOME, title: 'Last Command'}));
-      if (!argv['no-interactive']) {
-        await interactiveLoop(lastCmd, argv.limit);
-      }
-    }
+
+    console.log(boxen(lastCmd, { ...BOX.WELCOME, title: 'Last Command'}));
+    await interactiveLoop(lastCmd, 15, currentModel);
   })().catch(err => {
     console.error(chalk.red(`Fatal: ${err.message}`));
     process.exit(1);

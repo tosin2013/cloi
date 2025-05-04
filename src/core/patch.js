@@ -43,12 +43,37 @@ function detectStripLevel(firstPath) {
  * @param {string} diff - The diff/patch text to display.
  */
 export function showPatch(diff) {
+  // Check if the diff has proper hunk headers, add if missing
+  if (diff.includes('---') && diff.includes('+++') && !diff.includes('@@')) {
+    // Simple heuristic to add hunk headers if missing
+    const lines = diff.split('\n');
+    let headerEndIndex = -1;
+    
+    // Find where the header ends (after +++ line)
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('+++')) {
+        headerEndIndex = i + 1;
+        break;
+      }
+    }
+    
+    // If we found the header end and there are changes after it
+    if (headerEndIndex >= 0 && headerEndIndex < lines.length) {
+      // Simple header with line 1 and appropriate context
+      const hunkHeader = '@@ -1,1 +1,1 @@';
+      lines.splice(headerEndIndex, 0, hunkHeader);
+      diff = lines.join('\n');
+    }
+  }
+  
   // Colorize diff: '+' lines are green, '-' lines are red
   const colorizedDiff = diff.split('\n').map(line => {
     if (line.startsWith('+')) {
       return chalk.green(line);
     } else if (line.startsWith('-')) {
       return chalk.red(line);
+    } else if (line.startsWith('@@')) {
+      return chalk.cyan(line);
     } else {
       return line;
     }
@@ -147,6 +172,12 @@ function fixMissingCommentPlusSign(diff) {
  * @returns {string} - The cleaned diff text.
  */
 export function extractDiff(diffText) {
+  // First, check if this is already a clean diff from our structured generation
+  if (diffText.trim().startsWith('--- a/') && 
+      diffText.includes('\n+++ b/')) {
+    return diffText.trim();
+  }
+  
   // Handle the new format with FINAL DIFF marker
   const finalDiffMatch = diffText.match(/FINAL DIFF\s*([\s\S]+?)(?:```\s*\n\n|$)/i);
   if (finalDiffMatch) {
@@ -156,9 +187,6 @@ export function extractDiff(diffText) {
     // Remove any trailing markdown code block markers and text after them
     diffContent = diffContent.replace(/```[\s\S]*$/, '').trim();
     
-    // For debugging
-    //console.log(chalk.gray('[extractDiff] Found FINAL DIFF marker, extracting content'));
-    
     return diffContent;
   }
 
@@ -167,31 +195,20 @@ export function extractDiff(diffText) {
   if (markdownMatch) {
     const content = markdownMatch[1].trim();
     
-    // For debugging
-    //console.log(chalk.gray('[extractDiff] Extracted content from markdown code block'));
-    
     return content;
   }
   
   // Handle plain diff format that might include explanation text
   const diffMatch = diffText.match(/^(---[\s\S]+?(?:\n\+\+\+[\s\S]+?)(?:\n@@[\s\S]+?))/m);
   if (diffMatch) {
-    // For debugging
-    //console.log(chalk.gray('[extractDiff] Extracted content matching unified diff pattern'));
-    
     return diffMatch[1].trim();
   }
   
   // If the response already seems to be a clean diff, return it as is
   if (diffText.trim().startsWith('---') && diffText.includes('+++')) {
-    // For debugging
-    //console.log(chalk.gray('[extractDiff] Content already appears to be a clean diff'));
-    
     // Extract just the unified diff part
     const endOfDiffIndex = diffText.indexOf('```', diffText.indexOf('+++'));
     if (endOfDiffIndex > 0) {
-      // For debugging
-      //console.log(chalk.gray('[extractDiff] Trimming trailing content after unified diff'));
       return diffText.substring(0, endOfDiffIndex).trim();
     }
     
@@ -213,7 +230,6 @@ export function extractDiff(diffText) {
   }
   
   // Fall back to returning as is after trimming
-  //console.log(chalk.gray('[extractDiff] No specific format detected, returning trimmed content'));
   return diffText.trim();
 }
 
@@ -239,5 +255,232 @@ export async function confirmAndApply(diff, cwd = process.cwd()) {
   } catch (e) {
     console.error(chalk.red(`Patch failed: ${e.message}`));
     return false;
+  }
+}
+
+/* ────────────────────────── Structured Diff Generation ─────────────────────────── */
+/**
+ * Converts structured patch data to unified diff format
+ * @param {Object} patchData - The structured patch data
+ * @param {string} currentDir - The current working directory
+ * @returns {string} - Unified diff format text
+ */
+export function convertToUnifiedDiff(patchData, currentDir) {
+  // Group changes by file
+  const fileChanges = {};
+  
+  // Normalize structure and handle any string processing before grouping
+  patchData.changes.forEach(change => {
+    // Normalize the file path
+    const filePath = change.file_path;
+    
+    if (!fileChanges[filePath]) {
+      fileChanges[filePath] = [];
+    }
+    
+    // Clone the change to avoid modifying original
+    const normalizedChange = { ...change };
+    
+    // Normalize the change to ensure consistent handling
+    // Make sure old_line and new_line are properly stored as single entities
+    // even if they contain newlines
+    fileChanges[filePath].push(normalizedChange);
+  });
+  
+  // Generate diff for each file
+  let diffOutput = '';
+  
+  for (const [filePath, changes] of Object.entries(fileChanges)) {
+    // Sort changes by line number
+    changes.sort((a, b) => a.line_number - b.line_number);
+    
+    // Add file headers
+    diffOutput += `--- a/${filePath}\n`;
+    diffOutput += `+++ b/${filePath}\n`;
+    
+    // Generate hunks
+    const hunks = generateHunks(changes, filePath);
+    diffOutput += hunks;
+  }
+  
+  return diffOutput;
+}
+
+/**
+ * Generates hunks for a unified diff from a list of changes
+ * @param {Array} changes - List of changes for a single file
+ * @param {string} filePath - The path of the file being changed
+ * @returns {string} - Formatted hunks
+ */
+function generateHunks(changes, filePath) {
+  // Add logging for debugging
+  //console.log('Generating hunks from changes:', JSON.stringify(changes, null, 2));
+  
+  if (!changes || changes.length === 0) {
+    console.log('No changes to process');
+    return '';
+  }
+  
+  try {
+    // Create separate hunks for each change instead of grouping them
+    let output = '';
+    
+    // Sort changes by line number for consistent ordering
+    changes.sort((a, b) => a.line_number - b.line_number);
+    
+    // Process each change as its own hunk
+    changes.forEach(change => {
+      const lineNumber = change.line_number;
+      
+      // Count additions and deletions for this change
+      let deletions = (change.old_line && change.old_line.trim()) ? 1 : 0;
+      let additions = (change.new_line !== null) ? 1 : 0;
+      
+      // Make sure we always have valid counts
+      if (deletions === 0) deletions = 1;
+      if (additions === 0) additions = 1;
+      
+      // Create the hunk header for this single change
+      const hunkHeader = `@@ -${lineNumber},${deletions} +${lineNumber},${additions} @@`;
+      output += hunkHeader + '\n';
+      
+      //console.log('Generated hunk header:', hunkHeader);
+      
+      // Add the change
+      if (change.old_line !== undefined && change.old_line !== null) {
+        output += processCodeLine(change.old_line, '-', filePath);
+      }
+      if (change.new_line !== null) {
+        output += processCodeLine(change.new_line, '+', filePath);
+      }
+    });
+    
+    // Log the final output for debugging
+    // console.log('Generated diff output:');
+    // console.log(output);
+    
+    return output;
+  } catch (error) {
+    console.log(chalk.red('Error generating hunks:', error.message));
+    return ''; // Return empty string on error
+  }
+}
+
+/**
+ * Process a line of code for diff output, handling both literal \n and actual newlines
+ * @param {string} codeText - The code text to process
+ * @param {string} prefix - The prefix to use (+ or -)
+ * @param {string} filePath - The file path for language detection
+ * @returns {string} - Formatted diff lines with prefix
+ */
+function processCodeLine(codeText, prefix, filePath) {
+  if (typeof codeText !== 'string') return '';
+  
+  // Handle both cases: escaped \n sequences and actual newlines in the input
+  let lines = [];
+  
+  // First, split on literal \n sequences
+  if (codeText.includes('\\n')) {
+    lines = codeText.split('\\n');
+  } else if (codeText.includes('\n')) {
+    // If not escaped but has actual newlines
+    lines = codeText.split('\n');
+  } else {
+    // Single line
+    return prefix + codeText + '\n';
+  }
+  
+  // Get file extension for language detection
+  const fileExt = filePath.split('.').pop().toLowerCase();
+  
+  // Check if this is a string literal that should be preserved as-is
+  const isStringLiteral = detectStringLiteral(codeText, fileExt);
+  
+  // If it's a string literal with \n, preserve it as a single line
+  if (isStringLiteral && lines.length > 1 && codeText.includes('\\n')) {
+    // This is a string with \n that should be treated as literal in source code
+    return prefix + codeText + '\n';
+  }
+  
+  // For normal multi-line scenarios
+  // Find indentation of the first line to preserve for subsequent lines
+  const indentMatch = lines[0].match(/^(\s+)/);
+  const baseIndent = indentMatch ? indentMatch[1] : '';
+  
+  // Format each line with the appropriate prefix and indentation
+  return lines.map((l, i) => {
+    // First line keeps original indentation
+    if (i === 0) {
+      return prefix + l;
+    }
+    // Subsequent lines get prefix plus base indentation plus content
+    return prefix + baseIndent + l;
+  }).join('\n') + '\n';
+}
+
+/**
+ * Detects if text contains a string literal that should preserve \n escapes
+ * @param {string} text - The code text to analyze
+ * @param {string} fileExt - File extension for language detection
+ * @returns {boolean} - Whether this appears to be a string literal
+ */
+function detectStringLiteral(text, fileExt) {
+  // Check for common string patterns based on language
+  switch (fileExt) {
+    case 'py':
+      // Python strings: f-strings, triple quotes, regular quotes
+      return (
+        text.includes('f"') || text.includes("f'") || 
+        text.includes('"""') || text.includes("'''") ||
+        (text.includes('"') && text.match(/"/g).length >= 2) ||
+        (text.includes("'") && text.match(/'/g).length >= 2)
+      );
+      
+    case 'c': case 'h': case 'cpp': case 'hpp': case 'cc': case 'cxx':
+      // C/C++ strings: double quotes or character literals
+      return (
+        (text.includes('"') && text.match(/"/g).length >= 2) ||
+        (text.includes("'") && text.match(/'/g).length >= 2)
+      );
+      
+    case 'rs':
+      // Rust strings: raw strings r"..." or regular strings
+      return (
+        text.includes('r#"') || 
+        text.includes('r"') ||
+        (text.includes('"') && text.match(/"/g).length >= 2)
+      );
+      
+    case 'go':
+      // Go strings: backtick strings or regular strings
+      return (
+        text.includes('`') ||
+        (text.includes('"') && text.match(/"/g).length >= 2)
+      );
+      
+    case 'js': case 'ts': case 'jsx': case 'tsx':
+      // JavaScript/TypeScript: template literals, regular strings
+      return (
+        text.includes('`') ||
+        (text.includes('"') && text.match(/"/g).length >= 2) ||
+        (text.includes("'") && text.match(/'/g).length >= 2)
+      );
+      
+    case 'java': case 'kt': case 'scala':
+      // Java/Kotlin/Scala strings
+      return (
+        (text.includes('"') && text.match(/"/g).length >= 2) ||
+        (text.includes("'") && text.match(/'/g).length >= 2)
+      );
+      
+    default:
+      // General string detection as fallback
+      return (
+        (text.includes('"') && text.match(/"/g).length >= 2) ||
+        (text.includes("'") && text.match(/'/g).length >= 2) ||
+        text.includes('`') ||
+        text.includes('"""') ||
+        text.includes("'''")
+      );
   }
 } 

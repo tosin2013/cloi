@@ -1,6 +1,6 @@
 {
 "name": "@cloi-ai/cloi",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Security-first agentic debugging tool for the terminal",
   "main": "bin/index.js",
   "type": "module",

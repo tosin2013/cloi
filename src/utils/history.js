@@ -10,7 +10,7 @@
 import { promises as fs } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { runCommand } from './command.js';
+import { runCommand } from '../core/command.js';
 import { makePicker } from '../ui/prompt.js';
 
 // CHECK
@@ -71,4 +71,4 @@ export async function selectHistoryItem(limit = 15) {
   if (!choice) return null;
   // Extract command after the first colon+space
   return choice.replace(/^\d+:\s*/, '');
-}
+} 

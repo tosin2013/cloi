@@ -8,16 +8,19 @@
  * the user experience during potentially lengthy LLM operations.
  */
 
-import { execSync } from 'child_process';
-import { spawn } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { makePicker } from '../ui/prompt.js';
 import { askYesNo, closeReadline, getReadline } from '../ui/prompt.js';
 import { checkNetwork } from './command.js';
 import chalk from 'chalk';
-import { buildErrorContext, extractFilesFromTraceback, getErrorLines } from '../utils/traceback.js';
+import { buildErrorContext, extractFilesFromTraceback, getErrorLines } from './traceback.js';
 import { BOX } from '../ui/boxen.js';
 import boxen from 'boxen';
 import { runLLMWithTempScript } from '../utils/tempscript.js';
+import { promises as fs } from 'fs';
+import ollama from 'ollama';
+import { cpus } from 'os';
+import { convertToUnifiedDiff, extractDiff } from './patch.js';
 
 /* ───────────────────────── Available Models Provider ────────────────────────────── */
 /**
@@ -26,11 +29,14 @@ import { runLLMWithTempScript } from '../utils/tempscript.js';
  */
 export function getAvailableModels() {
     return [
-      'phi4:latest',
-      'phi4:14b-q4_K_M',
-      'qwen2.5:14b',
-      'qwen2.5:7b',
-      'llama3.1:8b'
+      'llama3.1:8b',
+      'gemma3:4b',
+      'gemma3:12b',
+      'gemma3:27b',
+      'qwen3:8b',
+      'qwen3:14b',
+      'qwen3:30b',
+      'phi4:14b'
     ];
   }
   
@@ -39,15 +45,24 @@ export function getAvailableModels() {
  * Reads the list of currently installed Ollama models using `ollama list`.
  * @returns {string[]} - An array of installed model names, or empty array on error.
  */
-function readModels() {
+export function readModels() {
   try {
     const output = execSync('ollama list', { encoding: 'utf8' });
-    return output
+    
+    // Log the raw output for debugging
+    //console.log(chalk.gray('Detected installed models:'));
+    //console.log(chalk.gray(output));
+    
+    const models = output
       .split(/\r?\n/)
       .slice(1)                         // drop header line: NAME   SIZE
       .filter(Boolean)
       .map(l => l.split(/\s+/)[0]);    // first token is the model name
-  } catch {
+    
+    //console.log(chalk.gray('Detected installed models:'), models);
+    return models;
+  } catch (error) {
+    console.error(chalk.red('Error reading models:'), error.message);
     return [];
   }
 }
@@ -69,16 +84,31 @@ export async function selectModelItem() {
       title = 'Available Models';
       // Get installed models to check status
       const installedModels = readModels();
+      
+      // To ensure we don't miss any models, create a combined list
+      const allModels = [...new Set([...models, ...installedModels])];
+      
       // Create display-friendly versions with installation status
-      const displayNames = models.map(model => {
+      const displayNames = allModels.map(model => {
         const isInstalled = installedModels.includes(model);
         const displayName = model.replace(/:latest$/, '');
         return `${displayName} ${isInstalled ? chalk.green('✓') : chalk.gray('-')}`;
       });
       
-      // Create sorted pairs of [displayName, originalModel] for sorting and maintaining mapping
-      const modelPairs = displayNames.map((display, i) => [display, models[i]]);
-      modelPairs.sort((a, b) => a[0].localeCompare(b[0]));
+      // Create pairs with install status for sorting (installed first, then alphabetical)
+      const modelPairs = displayNames.map((display, i) => {
+        const isInstalled = installedModels.includes(allModels[i]);
+        return [display, allModels[i], isInstalled];
+      });
+      
+      // Sort installed models first, then alphabetically
+      modelPairs.sort((a, b) => {
+        // First sort by installation status
+        if (a[2] && !b[2]) return -1;
+        if (!a[2] && b[2]) return 1;
+        // Then sort alphabetically
+        return a[0].localeCompare(b[0]);
+      });
       
       // Extract sorted display names and original models
       const sortedDisplayNames = modelPairs.map(pair => pair[0]);
@@ -663,7 +693,7 @@ Make sure it's valid syntax that can be directly executed in a terminal.
 
 /* ────────────────────────── Code Patch Generator ─────────────────────────── */
 /**
- * Generates a patch to fix code issues using LLM.
+ * Generates a patch to fix code issues using LLM with structured outputs.
  * @param {string} errorOutput - The error output.
  * @param {string[]} prevPatches - Previous attempted patches.
  * @param {string} analysis - Previous error analysis.
@@ -700,7 +730,7 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
 
     const parts = [
       // ───── Intro
-      'You are a code-fixing AI. Given an analysis, extract a unified diff patch to fix it.',
+      'You are a code-fixing AI. Given an analysis, extract a structured patch to fix it.',
       '',
 
       // ───── Analysis
@@ -754,75 +784,116 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
       '### Previous Patches',
       prevPatchesText || '(none)',
       '',
+    );
     
+    // Add structured output instructions
+    parts.push(
       // ───── Instructions
       '### Instructions',
-      
-      '1. Analyze the Fix section carefully',
-      '2. Extract the EXACT code chunk that addresses the root cause. DO NOT REORDER/ALTER the extracted code.',
-      '3. Output **ONLY** a unified diff beginning with `--- a/` and `+++ b/`',
-      '4. For **EACH** line in the code without missing any lines, carefully compare the original line and the new line:',
-      '   a. If a line is unchanged, DO NOT include it in the diff',
-      '   b. If a line is removed, mark with `-` at the line start',
-      '   c. If a line is added, mark with `+` at the line start',
-      '   d. If a line is changed, 1) ALWAYS mark the original line with `-` at the line start, and 2) ALWAYS mark the new line with `+` at the line start. Make sure you add the entire line, **NOT PARTIAL**.',
-      '5. IMPORTANT: Never modify the same line twice. Each line should appear at most once in the diff.',
-      '6. Every patch line must begin with one of FOUR prefixes only: "--- ", "+++ ", "@@", "-", "+"',
-      '7. Ensure the diff applies with the Unix `patch -p1` command',
-      '8. Paths **must** be relative to the current working directory (' + currentDir + ') and prefixed `a/` and `b/` (git-style)',
-      '9. Output *no* commentary, markdown fences, or extra text',
+      'Analyze the error and generate a structured patch in JSON format with the following schema:',
+      '{',
+      '  "changes": [',
+      '    {',
+      '      "file_path": "relative/path/to/file.py",',
+      '      "line_number": 42,',
+      '      "old_line": "    z = x + yy",',
+      '      "new_line": "    z = x + y"',
+      '    },',
+      '    ...',
+      '  ],',
+      '  "description": "Fixed typo in variable name and syntax error"',
+      '}',
       '',
-    
-      // ───── Example
-      '### Example Original Code:',
-      '```python',
-      'def some_function(x, y):',
-      '    x = x',
-      '    z = x + yy',
-      '    z +== 1',
-      '    return z',
-      '```',
+      '1. Ensure the file_path is relative to: ' + currentDir,
+      '2. Include the ENTIRE line for both old_line and new_line',
+      '3. For deletions, include old_line but set new_line to null',
+      '4. For additions, set line_number of the line that comes before and set old_line to ""',
       '',
-
-      '### Example Corrected Code:',
-      '```python',
-      'def some_function(x, y):',
-      '    z = x + y',
-      '    z += 1',
-      '    return z',
-      '```',
-      '',
-
-      '### Example Unified Diff:',
-      '```diff',
-      '--- a/file.py',
-      '+++ b/file.py',
-      '@@ -34,4 +34,3 @@ def some_function():',
-      '-    x = x',
-      '-    z = x + yy',
-      '+    z = x + y',
-      '-    z +== 1',
-      '+    z += 1',
-      '     return z',
-      '```',
-      '',
-    
       'Make sure to:',
       '1. Only include lines that are actually changed',
       '2. Never modify the same line twice',
-      '3. Keep the diff as minimal as possible',
+      '3. Keep the changes as minimal as possible',
       '4. Maintain the correct order of operations',
       '',
-      // ───── Diff header cue
-      '### Diff'
+      '### JSON Output'
     );
     
     const prompt = parts.join('\n');
-
-    //console.log(prompt);
     
-    // Run the analysis using the TempScript approach
-    const output = await runLLMWithTempScript(prompt, model, 'patch_generation');
+    // Define the schema for the patch response
+    const patchSchema = {
+      type: "object",
+      properties: {
+        changes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              file_path: { type: "string" },
+              line_number: { type: "integer" },
+              old_line: { type: "string" },
+              new_line: { type: "string", nullable: true }
+            },
+            required: ["file_path", "line_number", "old_line"]
+          }
+        },
+        description: { type: "string" }
+      },
+      required: ["changes"]
+    };
+
+    let output;
+    try {
+      // Add diagnostic logs
+      //console.log(chalk.gray('Starting Ollama API call with model:', model));
+      const cpuThreads = Math.min(8, (cpus()?.length || 2));
+      
+      // Try using the structured output API if available
+      const response = await ollama.chat({
+        model: model,
+        messages: [{ role: 'user', content: prompt }],
+        format: patchSchema,  // Pass the schema to the format parameter
+        stream: false,        // Structured outputs don't work with streaming
+        options: {            
+          // Use the same optimized settings from patch_generation preset
+          temperature: 0.1,
+          num_predict: 768,
+          num_thread: cpuThreads,
+          num_batch: 32,
+          mmap: true,
+          int8: true,
+          f16: false,
+          repeat_penalty: 1.0,
+          top_k: 40,
+          top_p: 0.95,
+          cache_mode: "all",
+          use_mmap: true,
+          use_mlock: true
+        }
+      });
+      
+      // Log successful response
+      
+      // The response will automatically be in the schema format
+      const structuredPatch = JSON.parse(response.message.content);
+      
+      console.log(chalk.gray(JSON.stringify(structuredPatch, null, 2)));
+      
+      // Convert the structured patch to unified diff format
+      output = convertToUnifiedDiff(structuredPatch, currentDir);
+
+
+    } catch (error) {
+      // Add detailed error logging
+      console.log(chalk.red('Ollama API call error details:'));
+      console.log(chalk.red('Error name:', error.name));
+      //console.log(chalk.red('Error message:', error.message));
+      //console.log(chalk.red('Error stack:', error.stack));
+      
+      // Fall back to the traditional approach if structured outputs fail
+      console.log(chalk.yellow(`Structured format unavailable - reverting to standard text output: ${error.message}`));
+      output = await runLLMWithTempScript(prompt, model, 'patch_generation');
+    }
     
     // Stop thinking spinner before processing result
     stopThinking();
