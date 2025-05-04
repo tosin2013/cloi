@@ -1,49 +1,50 @@
 {
-"name": "@cloi-ai/cloi",
-  "version": "1.0.3",
-  "description": "Security-first agentic debugging tool for the terminal",
-  "main": "bin/index.js",
-  "type": "module",
-  "bin": {
-    "cloi": "bin/index.js",
-    "cloi-setup": "bin/cloi-setup.cjs",
-    "cloi-ollama-setup": "bin/ollama-setup.cjs"
-  },
-  "scripts": {
-    "postinstall": "node bin/cloi-setup.cjs --auto && (pip install -r bin/requirements.txt || pip3 install -r bin/requirements.txt || echo 'Python requirements installation failed - continuing...') && node bin/ollama-setup.cjs"
-  },
-  "author": "Gabriel Cha, Min Kim",
-  "license": "CC BY-NC 4.0",
-  "dependencies": {
-    "boxen": "^8.0.1",
-    "chalk": "^5.4.1",
-    "yargs": "^17.7.2",
-    "ollama": "^0.1.1"
-  },
-  "engines": {
-    "node": ">=14.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/cloi-ai/cloi"
-  },
-  "homepage": "https://github.com/cloi-ai/cloi#readme",
-  "keywords": [
-    "cli",
-    "terminal",
-    "debug",
-    "llm",
-    "ollama",
-    "ai",
-    "debugging",
-    "shell",
-    "command-line",
-    "developer-tools"
-  ],
-  "files": [
-    "bin/",
-    "src/",
-    "README.md",
-    "LICENSE"
-  ]
-}
+    "name": "@cloi-ai/cloi",
+      "version": "1.0.3",
+      "description": "Security-first agentic debugging tool for the terminal",
+      "main": "bin/index.js",
+      "type": "module",
+      "bin": {
+        "cloi": "bin/index.js",
+        "cloi-setup": "bin/cloi-setup.cjs",
+        "cloi-ollama-setup": "bin/ollama-setup.cjs"
+      },
+      "scripts": {
+        "postinstall": "node bin/cloi-setup.cjs --auto && (pip install -r bin/requirements.txt || pip3 install -r bin/requirements.txt || echo 'Python requirements installation failed - continuing...') && node bin/ollama-setup.cjs"
+      },
+      "author": "Gabriel Cha, Min Kim",
+      "license": "CC BY-NC 4.0",
+      "dependencies": {
+        "boxen": "^8.0.1",
+        "chalk": "^5.4.1",
+        "yargs": "^17.7.2",
+        "ollama": "^0.1.1"
+      },
+      "engines": {
+        "node": ">=14.0.0"
+      },
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/cloi-ai/cloi"
+      },
+      "homepage": "https://github.com/cloi-ai/cloi#readme",
+      "keywords": [
+        "cli",
+        "terminal",
+        "debug",
+        "llm",
+        "ollama",
+        "ai",
+        "debugging",
+        "shell",
+        "command-line",
+        "developer-tools"
+      ],
+      "files": [
+        "bin/",
+        "src/",
+        "README.md",
+        "LICENSE"
+      ]
+    }
+    
