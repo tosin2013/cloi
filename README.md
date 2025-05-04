@@ -72,6 +72,13 @@ Cloi is built for developers who live in the terminal and value privacy:
 </tr>
 </table>
 
+### Beta Features
+
+> **Beta Feature Notice:** The Automate Fix feature is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
+> - Reviewing all suggested changes before accepting them
+> - Testing the changes in a development environment first
+> - Keeping backups of your code before using automated fixes
+
 ### Contributing
 
 We welcome contributions from the community! By contributing to this project, you agree to the following guidelines:
@@ -83,21 +90,29 @@ We welcome contributions from the community! By contributing to this project, yo
 
 For more detailed information on contributing, please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
-### Patches 
+<br>
 
-#### [1.0.2] May 4th, 2025
-- Feature: Integrated [structured outputs](https://ollama.com/blog/structured-outputs) Ollama's latest API - pretty neat JSON 
-outputs for more robust patches; falls back to traditional LLM calls if the structured API isn't available
-- Feature: Implemented CLI model selection via `--model` flag - specify your preferred Ollama model right from the command line (credit to [@canadaduane](https://github.com/canadaduane) for the insightful suggestion!)
-- UI Enhancement: The `/model` command now displays your locally installed Ollama models 
-- Refactor: Some internal architecture adjustments to maintain conceptual integrity
+---
+
+<br>
+
+## Patches 
+
+### [1.0.2] - May 4th, 2025
+
+- **Feature:** Integrated [structured outputs](https://ollama.com/blog/structured-outputs) from Ollama's latest API
+  - Creates more robust patches with JSON-based formatting
+  - Falls back to traditional LLM calls if the structured API isn't available
+
+- **Feature:** Implemented CLI model selection via `--model` flag
+  - Specify your preferred Ollama model right from the command line
+  - Credit to [@canadaduane](https://github.com/canadaduane) for the insightful suggestion!
+
+- **UI Enhancement:** The `/model` command now displays your locally installed Ollama models 
+
+- **Refactor:** Internal architecture adjustments to maintain conceptual integrity
   - Migrated `history.js` to the utils directory where it semantically belongs
   - Repositioned `traceback.js` to core since it's foundational to the debugging pipeline
-- Improvements: Purged lingering references to our project's original name "FigAI" and cleaned the CLI `--help` interface
 
-### Beta Features
+- **Improvements:** Purged lingering references to our project's original name "FigAI" and cleaned the CLI `--help` interface
 
-> **Beta Feature Notice:** The Automate Fix feature is currently in beta. While it can automatically apply fixes to your code, we strongly recommend:
-> - Reviewing all suggested changes before accepting them
-> - Testing the changes in a development environment first
-> - Keeping backups of your code before using automated fixes
