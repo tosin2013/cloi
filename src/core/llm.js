@@ -37,7 +37,9 @@ export function getAvailableModels() {
       'qwen3:8b',
       'qwen3:14b',
       'qwen3:30b',
-      'phi4:14b'
+      'phi4:14b',
+      'phi4-reasoning:plus',
+      'phi4-reasoning:14b'
     ];
   }
   
