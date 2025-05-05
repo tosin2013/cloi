@@ -55,7 +55,7 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
   
     while (true) {
       console.log(boxen(
-        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')},  ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
+        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
         BOX.PROMPT
       ));
   
