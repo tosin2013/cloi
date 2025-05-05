@@ -18,7 +18,7 @@ import { BOX } from '../ui/boxen.js';
 import boxen from 'boxen';
 import { runLLMWithTempScript } from '../utils/tempscript.js';
 import { promises as fs } from 'fs';
-import ollama from 'ollama';
+import { chat } from 'ollama';
 import { cpus } from 'os';
 import { convertToUnifiedDiff, extractDiff } from './patch.js';
 
@@ -849,7 +849,7 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
       const cpuThreads = Math.min(8, (cpus()?.length || 2));
       
       // Try using the structured output API if available
-      const response = await ollama.chat({
+      const response = await chat({
         model: model,
         messages: [{ role: 'user', content: prompt }],
         format: patchSchema,  // Pass the schema to the format parameter
