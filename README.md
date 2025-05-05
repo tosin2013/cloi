@@ -94,7 +94,12 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 
 ### Patches 
 
-#### [1.0.2] - May 4th, 2025
+### [1.0.5] - May 4th, 2025 @ 9:10pm PST
+
+- **Bug Fix**: Resolved dependency issue in package.json
+  - Updated Ollama dependency from deprecated version 0.1.1 to 0.5.15 which resolved ollama.chat API endpoints
+
+#### [1.0.2] - May 4th, 2025 @ 12:20pm PST
 
 - **Feature:** Integrated [structured outputs](https://ollama.com/blog/structured-outputs) from Ollama's latest API
   - Creates more robust patches with JSON-based formatting
