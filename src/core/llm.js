@@ -16,9 +16,10 @@ import chalk from 'chalk';
 import { buildErrorContext, extractFilesFromTraceback, getErrorLines } from './traceback.js';
 import { BOX } from '../ui/boxen.js';
 import boxen from 'boxen';
+import ollama from 'ollama'
 import { runLLMWithTempScript } from '../utils/tempscript.js';
 import { promises as fs } from 'fs';
-import { chat } from 'ollama';
+
 import { cpus } from 'os';
 import { convertToUnifiedDiff, extractDiff } from './patch.js';
 
@@ -849,7 +850,7 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
       const cpuThreads = Math.min(8, (cpus()?.length || 2));
       
       // Try using the structured output API if available
-      const response = await chat({
+      const response = await ollama.chat({
         model: model,
         messages: [{ role: 'user', content: prompt }],
         format: patchSchema,  // Pass the schema to the format parameter

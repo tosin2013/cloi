@@ -1,34 +1,34 @@
 {
     "name": "@cloi-ai/cloi",
-      "version": "1.0.3",
-      "description": "Security-first agentic debugging tool for the terminal",
-      "main": "bin/index.js",
-      "type": "module",
-      "bin": {
+    "version": "1.0.5",
+    "description": "Security-first agentic debugging tool for the terminal",
+    "main": "bin/index.js",
+    "type": "module",
+    "bin": {
         "cloi": "bin/index.js",
         "cloi-setup": "bin/cloi-setup.cjs",
         "cloi-ollama-setup": "bin/ollama-setup.cjs"
-      },
-      "scripts": {
+    },
+    "scripts": {
         "postinstall": "node bin/cloi-setup.cjs --auto && (pip install -r bin/requirements.txt || pip3 install -r bin/requirements.txt || echo 'Python requirements installation failed - continuing...') && node bin/ollama-setup.cjs"
-      },
-      "author": "Gabriel Cha, Min Kim",
-      "license": "CC BY-NC 4.0",
-      "dependencies": {
+    },
+    "author": "Gabriel Cha, Min Kim",
+    "license": "CC BY-NC 4.0",
+    "dependencies": {
         "boxen": "^8.0.1",
         "chalk": "^5.4.1",
-        "yargs": "^17.7.2",
-        "ollama": "^0.1.1"
-      },
-      "engines": {
+        "ollama": "0.5.15",
+        "yargs": "^17.7.2"
+    },
+    "engines": {
         "node": ">=14.0.0"
-      },
-      "repository": {
+    },
+    "repository": {
         "type": "git",
         "url": "https://github.com/cloi-ai/cloi"
-      },
-      "homepage": "https://github.com/cloi-ai/cloi#readme",
-      "keywords": [
+    },
+    "homepage": "https://github.com/cloi-ai/cloi#readme",
+    "keywords": [
         "cli",
         "terminal",
         "debug",
@@ -39,12 +39,11 @@
         "shell",
         "command-line",
         "developer-tools"
-      ],
-      "files": [
+    ],
+    "files": [
         "bin/",
         "src/",
         "README.md",
         "LICENSE"
-      ]
-    }
-    
+    ]
+}
