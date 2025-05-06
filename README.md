@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-green" alt="license" />
 </div>
 <br>
-<div align="center"><img src="demo.gif" alt="Cloi CLI Demo" /></div>
+<div align="center"><img src="assets/demo.gif" alt="Cloi CLI Demo" /></div>
 
 ## Overview
 
@@ -47,7 +47,7 @@ Cloi is built for developers who live in the terminal and value privacy:
 - **100% Local** – Your code never leaves your machine. No API key needed.
 - **Automates Fixes (Beta)** – Analyze errors and apply patches with a single command.
 - **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
-- **Customizable** – Ships with Phi-4 model. Swap models as needed via Ollama.
+- **Customizable** – Ships with Phi-4. Swap between your locally installed Ollama models.
 - **Free to Use** – Extensible architecture. Fork, contribute, and customize to your needs.
 
 ### System Requirements
@@ -85,6 +85,11 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 
 ### Patches 
 
+#### [1.0.6] - May 5th, 2025 @ 5:30pm PST
+- **Feature:** Included new `phi4-reasoning:plu`s and `qwen3` models into UI boxen `/model` for easy access and download.
+
+<div align="center"><img src="assets/demo106.gif" alt="Cloi CLI Demo" width="600" /></div>
+
 #### [1.0.5] - May 4th, 2025 @ 9:10pm PST
 
 - **Bug Fix**: Resolved dependency issue in package.json
@@ -99,8 +104,9 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 - **Feature:** Implemented CLI model selection via `--model` flag
   - Specify your preferred Ollama model right from the command line
   - Credit to [@canadaduane](https://github.com/canadaduane) for the insightful suggestion!
-- **UI Enhancement:** The `/model` command now displays your locally installed Ollama models 
+- **UI Enhancement:** The `/model` command now displays ALL you locally installed Ollama models 
 - **Refactor:** Internal architecture adjustments to maintain conceptual integrity
   - Migrated `history.js` to the utils directory where it semantically belongs
   - Repositioned `traceback.js` to core since it's foundational to the debugging pipeline
 - **Improvements:** Purged lingering references to our project's original name "FigAI" and cleaned the CLI `--help` interface
+
