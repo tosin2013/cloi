@@ -86,7 +86,7 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 ### Patches 
 
 #### [1.0.6] - May 5th, 2025 @ 5:30pm PST
-- **Feature:** Included new `phi4-reasoning:plu`s and `qwen3` models into UI boxen `/model` for easy access and download.
+- **Feature:** Included new `phi4-reasoning:plus` and `qwen3` models into UI boxen `/model` for easy access and download.
 
 <div align="center"><img src="assets/demo106.gif" alt="Cloi CLI Demo" width="600" /></div>
 
