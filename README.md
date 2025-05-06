@@ -86,9 +86,9 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 ### Patches 
 
 #### [1.0.6] - May 5th, 2025 @ 5:30pm PST
-- **Feature:** Included new `phi4-reasoning:plus` and `qwen3` models into UI boxen `/model` for easy access and download.
+- **Feature:** Included new `phi4-reasoning:plus`,`qwen3`, and ALL your locally installed Ollama models into boxen `/model` for easy access.
 
-<div align="center"><img src="assets/demo106.gif" alt="Cloi CLI Demo" width="600" /></div>
+<div align="center"><img src="assets/model.gif" alt="Cloi CLI Demo" width="600" /></div>
 
 #### [1.0.5] - May 4th, 2025 @ 9:10pm PST
 
