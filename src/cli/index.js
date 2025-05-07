@@ -341,6 +341,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         type: 'string'
       })
       .help().alias('help', '?')
+      .epilog('CLOI - Open source and completely local debugging agent.')
       .parse();
   
     // Check if the specified model is installed, install if not
