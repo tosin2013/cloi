@@ -77,7 +77,8 @@ Cloi is built for developers who live in the terminal and value privacy:
 We welcome contributions from the community! By contributing to this project, you agree to the following guidelines:
 
 - **Scope:** Contributions should align with the project's goals of providing a secure, local AI debugging assistant
-- **Non-Commercial Use:** All contributions must adhere to the CC BY-NC 4.0 license
+- **License:** All contributions must be licensed under the GNU General Public License v3.0 (GPL-3.0)
+- **Copyleft:** Any derivative works must also be distributed under the GPL-3.0 license
 
 For more detailed information on contributing, please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
