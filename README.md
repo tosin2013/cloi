@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/license-GLP%203.0-green" alt="license" />
 </div>
 <br>
-<div align="center"><img src="assets/demo.gif" alt="Cloi CLI Demo" /></div>
+<div align="center"><img src="assets/demovid.gif" alt="Cloi CLI Demo" /></div>
 
 ## Overview
 
