@@ -23,21 +23,6 @@ Install globally:
 npm install -g @cloi-ai/cloi
 ```
 
-
-
-For Linux users, install libsecret first:
-```bash
-# Debian/Ubuntu
-sudo apt-get install libsecret-1-dev
-
-# Red Hat/Fedora
-sudo dnf install libsecret-devel
-
-# Arch Linux
-sudo pacman -S libsecret
-```
-
-
 **No API key needed, runs completely locally.**
 
 Navigate to your project directory and call Cloi when you run into an error.
