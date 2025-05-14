@@ -132,3 +132,68 @@ export function makePicker(items, title = 'Picker') {
       });
     };
   }
+
+/**
+ * Prompts for input with optional masking for sensitive data
+ * @param {string} prompt - The prompt to display
+ * @param {boolean} [mask=false] - Whether to mask the input
+ * @returns {Promise<string>} - The user's input
+ */
+export async function askInput(prompt, mask = true) {
+  return new Promise((resolve) => {
+    const rl = getReadline();
+    
+    if (mask) {
+      // Use raw mode to handle character input manually
+      const stdin = process.stdin;
+      const stdout = process.stdout;
+      let input = '';
+      
+      // Save current raw state
+      const wasRaw = stdin.isRaw;
+      
+      // Enter raw mode
+      stdin.setRawMode(true);
+      stdin.resume();
+      
+      // Write prompt
+      stdout.write(prompt);
+      
+      const onData = (data) => {
+        const char = data.toString();
+        
+        // Handle special keys
+        switch (char) {
+          case '\u0003': // Ctrl+C
+            stdout.write('\n');
+            process.exit();
+            break;
+          case '\u000D': // Enter
+            stdout.write('\n');
+            stdin.removeListener('data', onData);
+            stdin.setRawMode(wasRaw);
+            stdin.pause();
+            resolve(input);
+            break;
+          case '\u007F': // Backspace
+            if (input.length > 0) {
+              input = input.slice(0, -1);
+              stdout.write('\b \b');
+            }
+            break;
+          default:
+            if (char >= ' ') { // Printable characters
+              input += char;
+              stdout.write('*');
+            }
+        }
+      };
+      
+      stdin.on('data', onData);
+    } else {
+      rl.question(prompt, (answer) => {
+        resolve(answer);
+      });
+    }
+  });
+}

@@ -23,6 +23,21 @@ Install globally:
 npm install -g @cloi-ai/cloi
 ```
 
+
+
+For Linux users, install libsecret first:
+```bash
+# Debian/Ubuntu
+sudo apt-get install libsecret-1-dev
+
+# Red Hat/Fedora
+sudo dnf install libsecret-devel
+
+# Arch Linux
+sudo pacman -S libsecret
+```
+
+
 **No API key needed, runs completely locally.**
 
 Navigate to your project directory and call Cloi when you run into an error.
@@ -68,6 +83,15 @@ Cloi is built for developers who live in the terminal and value privacy:
     • <b>Runtime:</b> Node.js 14+ and Python 3.6+<br>
     • <b>Shell:</b> Zsh, Fish, Bash (limited testing)<br>
     • <b>Dependencies:</b> Ollama (automatically installed if needed)
+  </td>
+</tr>
+<tr>
+  <td><b>🔒 Platform-Specific</b></td>
+  <td>
+    • <b>Linux:</b> libsecret library (libsecret-1-dev)<br>
+    • <b>macOS:</b> No additional requirements<br>
+    • <b>Windows:</b> Visual Studio Build Tools<br>
+    • <b>All:</b> C++ compiler for native modules
   </td>
 </tr>
 </table>

@@ -376,7 +376,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       }
     }
     
-    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool';
+    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool!!';
     console.log(boxen(
       `${banner}\n↳ model: ${currentModel}\n↳ completely local and secure`,
       BOX.WELCOME
