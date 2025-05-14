@@ -10,13 +10,21 @@
         "cloi-ollama-setup": "bin/ollama-setup.cjs"
     },
     "scripts": {
-        "postinstall": "node bin/cloi-setup.cjs --auto && (pip install -r bin/requirements.txt || pip3 install -r bin/requirements.txt || echo 'Python requirements installation failed - continuing...') && node bin/ollama-setup.cjs"
+        "postinstall": "node bin/cloi-setup.cjs --auto && (pip install -r bin/requirements.txt || pip3 install -r bin/requirements.txt || echo 'Python requirements installation failed - continuing...') && node bin/ollama-setup.cjs",
+        "dev": "node bin/index.js",
+        "dev:setup": "node bin/cloi-setup.cjs",
+        "dev:ollama": "node bin/ollama-setup.cjs",
+        "link": "npm link",
+        "unlink": "npm unlink",
+        "clean": "rm -rf node_modules package-lock.json",
+        "reinstall": "npm run clean && npm install"
     },
     "author": "Gabriel Cha, Min Kim",
     "license": "GPL-3.0",
     "dependencies": {
         "boxen": "^8.0.1",
         "chalk": "^5.4.1",
+        "keytar": "^7.9.0",
         "ollama": "0.5.15",
         "yargs": "^17.7.2"
     },

@@ -22,6 +22,9 @@ import { promises as fs } from 'fs';
 
 import { cpus } from 'os';
 import { convertToUnifiedDiff, extractDiff } from './patch.js';
+import { FrontierClient } from '../utils/frontierClient.js';
+import { KeyManager } from '../utils/keyManager.js';
+import { askInput } from '../ui/prompt.js';
 
 /* ───────────────────────── Available Models Provider ────────────────────────────── */
 /**
@@ -29,20 +32,29 @@ import { convertToUnifiedDiff, extractDiff } from './patch.js';
  * @returns {string[]} - Array of model names (e.g., 'phi4:latest').
  */
 export function getAvailableModels() {
-    return [
-      'llama3.1:8b',
-      'gemma3:4b',
-      'gemma3:12b',
-      'gemma3:27b',
-      'qwen3:8b',
-      'qwen3:14b',
-      'qwen3:30b',
-      'phi4:14b',
-      'phi4-reasoning:plus',
-      'phi4-reasoning:14b'
-    ];
-  }
-  
+  const ollamaModels = [
+    'llama3.1:8b',
+    'gemma3:4b',
+    'gemma3:12b',
+    'gemma3:27b',
+    'qwen3:8b',
+    'qwen3:14b',
+    'qwen3:30b',
+    'phi4:14b',
+    'phi4-reasoning:plus',
+    'phi4-reasoning:14b'
+  ];
+
+  const frontierModels = [
+    'gpt-4.1-mini',
+    'gpt-4.1',
+    'o3',
+    'o3-mini'
+  ];
+
+  return [...ollamaModels, ...frontierModels];
+}
+
 /* ───────────────────────── Installed Models Reader ────────────────────────────── */
 /**
  * Reads the list of currently installed Ollama models using `ollama list`.
@@ -78,92 +90,144 @@ export function readModels() {
  * @returns {Promise<string|null>} - The selected model name, or null if cancelled or installation failed.
  */
 export async function selectModelItem() {
-    const isOnline = checkNetwork();
-    let models;
-    let title;
-  
-    if (isOnline) {
-      models = getAvailableModels();
-      title = 'Available Models';
-      // Get installed models to check status
-      const installedModels = readModels();
+  const isOnline = checkNetwork();
+  let models;
+  let title;
+
+  if (isOnline) {
+    models = getAvailableModels();
+    title = 'Available Models';
+    // Get installed models to check status
+    const installedModels = readModels();
+    
+    // To ensure we don't miss any models, create a combined list
+    const allModels = [...new Set([...models, ...installedModels])];
+    
+    // Create display-friendly versions with installation status
+    const displayNames = allModels.map(model => {
+      const isInstalled = installedModels.includes(model);
+      const isFrontier = FrontierClient.isFrontierModel(model);
+      const displayName = model.replace(/:latest$/, '');
       
-      // To ensure we don't miss any models, create a combined list
-      const allModels = [...new Set([...models, ...installedModels])];
+      // Color frontier models green, installed models with checkmark
+      if (isFrontier) {
+        return `${chalk.green(displayName)} ${chalk.gray('(Frontier)')}`;
+      }
+      return `${displayName} ${isInstalled ? chalk.green('✓') : chalk.gray('-')}`;
+    });
+    
+    // Create pairs with install status for sorting
+    const modelPairs = displayNames.map((display, i) => {
+      const isInstalled = installedModels.includes(allModels[i]);
+      const isFrontier = FrontierClient.isFrontierModel(allModels[i]);
+      return [display, allModels[i], isInstalled, isFrontier];
+    });
+    
+    // Sort: frontier models first, then installed, then alphabetically
+    modelPairs.sort((a, b) => {
+      if (a[3] !== b[3]) return b[3] - a[3]; // Frontier models first
+      if (a[2] !== b[2]) return b[2] - a[2]; // Then installed models
+      return a[0].localeCompare(b[0]); // Then alphabetically
+    });
+    
+    // Extract sorted display names and original models
+    const sortedDisplayNames = modelPairs.map(pair => pair[0]);
+    const sortedModels = modelPairs.map(pair => pair[1]);
+    
+    // Create picker with sorted display names
+    const picker = makePicker(sortedDisplayNames, title);
+    const selected = await picker();
+    
+    if (!selected) return null;
+    
+    // Extract the actual model name from the display name by removing color codes and (Frontier) suffix
+    const cleanSelected = selected.replace(/\u001b\[\d+m/g, '').replace(/\s*\(Frontier\)\s*$/, '').trim();
+    const selectedModel = sortedModels[sortedDisplayNames.indexOf(selected)];
+    const isFrontier = FrontierClient.isFrontierModel(selectedModel);
+    
+    console.log(chalk.gray(`Selected model: ${selectedModel} (isFrontier: ${isFrontier})`));
+    
+    if (isFrontier) {
+      // Check if we already have an API key
+      const hasKey = await KeyManager.hasKey(selectedModel);
       
-      // Create display-friendly versions with installation status
-      const displayNames = allModels.map(model => {
-        const isInstalled = installedModels.includes(model);
-        const displayName = model.replace(/:latest$/, '');
-        return `${displayName} ${isInstalled ? chalk.green('✓') : chalk.gray('-')}`;
-      });
-      
-      // Create pairs with install status for sorting (installed first, then alphabetical)
-      const modelPairs = displayNames.map((display, i) => {
-        const isInstalled = installedModels.includes(allModels[i]);
-        return [display, allModels[i], isInstalled];
-      });
-      
-      // Sort installed models first, then alphabetically
-      modelPairs.sort((a, b) => {
-        // First sort by installation status
-        if (a[2] && !b[2]) return -1;
-        if (!a[2] && b[2]) return 1;
-        // Then sort alphabetically
-        return a[0].localeCompare(b[0]);
-      });
-      
-      // Extract sorted display names and original models
-      const sortedDisplayNames = modelPairs.map(pair => pair[0]);
-      const sortedModels = modelPairs.map(pair => pair[1]);
-      
-      // Create picker with sorted display names
-      const picker = makePicker(sortedDisplayNames, title);
-      const selected = await picker();
-      
-      if (!selected) return null;
-      
-      const selectedModel = sortedModels[sortedDisplayNames.indexOf(selected)];
-      const isInstalled = installedModels.includes(selectedModel);
-      
-      if (!isInstalled) {
+      if (!hasKey) {
         console.log(boxen(
-          `Install ${selectedModel}?\nThis may take a few minutes.\n\nProceed (y/N):`,
-          { ...BOX.CONFIRM, title: 'Confirm Installation' }
+          `Please enter your API key for ${selectedModel}:`,
+          { ...BOX.CONFIRM, title: 'API Key Required' }
         ));
-        const response = await askYesNo('', true);
-        console.log(response ? 'y' : 'N');
-        if (response) {
-          const success = await installModel(selectedModel);
-          if (!success) return null;
-        } else {
+        
+        const apiKey = await askInput('API Key: ');
+        if (!apiKey) {
+          console.log(chalk.yellow('API key is required for frontier models.'));
+          return null;
+        }
+        
+        const stored = await KeyManager.storeKey(selectedModel, apiKey);
+        if (!stored) {
+          console.log(chalk.red('Failed to store API key securely.'));
           return null;
         }
       }
+
+      // Test the API key to make sure it works
+      try {
+        const client = new FrontierClient(selectedModel);
+        await client.getCredentials();
+      } catch (error) {
+        console.log(chalk.red(`Invalid or missing API key: ${error.message}`));
+        // Delete the invalid key
+        await KeyManager.deleteKey(selectedModel);
+        return null;
+      }
       
       return selectedModel;
-    } else {
-      models = readModels();
-      title = 'Installed Models';
-      
-      // Create display-friendly versions of model names (strip ":latest" suffix)
-      const displayNames = models.map(model => model.replace(/:latest$/, ''));
-      
-      // Create sorted pairs of [displayName, originalModel] for sorting and maintaining mapping
-      const modelPairs = displayNames.map((display, i) => [display, models[i]]);
-      modelPairs.sort((a, b) => a[0].localeCompare(b[0]));
-      
-      // Extract sorted display names and original models
-      const sortedDisplayNames = modelPairs.map(pair => pair[0]);
-      const sortedModels = modelPairs.map(pair => pair[1]);
-      
-      // Create picker with sorted display names
-      const picker = makePicker(sortedDisplayNames, title);
-      const selected = await picker();
-      // Map back to the original model name if something was selected
-      return selected ? sortedModels[sortedDisplayNames.indexOf(selected)] : null;
     }
+    
+    const isInstalled = installedModels.includes(selectedModel);
+    
+    if (!isInstalled) {
+      console.log(boxen(
+        `Install ${selectedModel}?\nThis may take a few minutes.\n\nProceed (y/N):`,
+        { ...BOX.CONFIRM, title: 'Confirm Installation' }
+      ));
+      const response = await askYesNo('', true);
+      console.log(response ? 'y' : 'N');
+      if (response) {
+        const success = await installModel(selectedModel);
+        if (!success) return null;
+      } else {
+        return null;
+      }
+    }
+    
+    return selectedModel;
+  } else {
+    models = readModels();
+    title = 'Installed Models';
+    
+    // Create display-friendly versions of model names (strip ":latest" suffix)
+    const displayNames = models.map(model => {
+      const isFrontier = FrontierClient.isFrontierModel(model);
+      const displayName = model.replace(/:latest$/, '');
+      return isFrontier ? chalk.green(displayName) : displayName;
+    });
+    
+    // Create sorted pairs of [displayName, originalModel] for sorting and maintaining mapping
+    const modelPairs = displayNames.map((display, i) => [display, models[i]]);
+    modelPairs.sort((a, b) => a[0].localeCompare(b[0]));
+    
+    // Extract sorted display names and original models
+    const sortedDisplayNames = modelPairs.map(pair => pair[0]);
+    const sortedModels = modelPairs.map(pair => pair[1]);
+    
+    // Create picker with sorted display names
+    const picker = makePicker(sortedDisplayNames, title);
+    const selected = await picker();
+    // Map back to the original model name if something was selected
+    return selected ? sortedModels[sortedDisplayNames.indexOf(selected)] : null;
   }
+}
 
 /* ───────────────────────── Model Installation Handler ────────────────────────────── */
 /**
@@ -405,6 +469,75 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
   const stopThinking = startThinking(getThinkingPhrasesForAnalysis());
   
   try {
+    if (FrontierClient.isFrontierModel(model)) {
+      // Check for API key first
+      const hasKey = await KeyManager.hasKey(model);
+      if (!hasKey) {
+        stopThinking();
+        console.log(boxen(
+          `Please enter your API key for ${model}:`,
+          { ...BOX.CONFIRM, title: 'API Key Required' }
+        ));
+        
+        const apiKey = await askInput('API Key: ');
+        if (!apiKey) {
+          console.log(chalk.yellow('API key is required for frontier models.'));
+          return 'Error: API key is required for frontier models.';
+        }
+        
+        const stored = await KeyManager.storeKey(model, apiKey);
+        if (!stored) {
+          console.log(chalk.red('Failed to store API key securely.'));
+          return 'Error: Failed to store API key securely.';
+        }
+      }
+
+      const client = new FrontierClient(model);
+      
+      // Build the prompt with additional context
+      let promptParts = [
+        'You are a helpful terminal assistant analysing command errors.',
+        '',
+        'ERROR OUTPUT:',
+        errorOutput,
+        '',
+        'FILE PATH:',
+        filePath,
+      ];
+      
+      // Add code summary if provided
+      if (codeSummary) {
+        promptParts.push('CODE SUMMARY:');
+        promptParts.push(codeSummary);
+        promptParts.push('');
+      }
+      
+      // Add file content if provided
+      if (fileContent) {
+        promptParts.push('FILE CONTENT:');
+        promptParts.push(fileContent);
+        promptParts.push('');
+      }
+      
+      // Add instructions
+      promptParts.push('Your response MUST include these sections:');
+      promptParts.push('1. ERROR LOCATION: Specify the file name and line number where the error is occurring.');
+      promptParts.push('2. Explain **VERY** concisely what went wrong.');
+      promptParts.push('3. FIX: Propose a concrete solution to fix the error.');
+      
+      const prompt = promptParts.join('\n');
+      console.log(chalk.blue('Prompt for analyzeWithLLM:'), prompt); // Log prompt for analyzeWithLLM
+      
+      const response = await client.query(prompt, {
+        temperature: 0.3,
+        max_tokens: 512
+      });
+      
+      stopThinking();
+      console.log(chalk.blue('Response from analyzeWithLLM client.query:'), JSON.stringify(response, null, 2)); // Log response
+      return response.response.trim();
+    }
+    
     // Handle missing Ollama or model by ensuring it's there
     try {
       execSync('which ollama', { stdio: 'ignore' });
@@ -635,12 +768,15 @@ export async function generateTerminalCommandFix(prevCommands, analysis, model) 
   const stopThinking = startThinking(getThinkingPhrasesForAnalysis());
   
   try {
-    // Format previous commands more robustly
-    const prevCommandsText = Array.isArray(prevCommands) && prevCommands.length > 0
-      ? `\n\nPreviously tried commands:\n${prevCommands.map(cmd => `- ${cmd}`).join('\n')}`
-      : '';
-    
-    const prompt = `
+    if (FrontierClient.isFrontierModel(model)) {
+      const client = new FrontierClient(model);
+      
+      // Format previous commands
+      const prevCommandsText = Array.isArray(prevCommands) && prevCommands.length > 0
+        ? `\n\nPreviously tried commands:\n${prevCommands.map(cmd => `- ${cmd}`).join('\n')}`
+        : '';
+      
+      const prompt = `
 You are a terminal command fixing AI. Given an analysis, extract a new command to fix it.
 
 Error Analysis:
@@ -656,39 +792,34 @@ Instructions:
 4. Do not include any explanations, commentary, or markdown formatting
 5. Only output the command itself
 
-Example Format:
-pip install missing-package
-
 Generate ONLY the command, nothing else. No explanations, no markdown, just the raw command.
 Make sure it's valid syntax that can be directly executed in a terminal.
 `.trim();
-    
-    // Run the analysis using the TempScript approach
-    const output = await runLLMWithTempScript(prompt, model, 'command_generation');
-    
-    // Stop thinking spinner before processing result
-    stopThinking();
-    
-    // Clean the output to get just the command
-    let command = output.trim();
-    
-    // Remove markdown code blocks if present
-    command = command.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '');
-    
-    // Remove any leading "Run: " or similar text
-    command = command.replace(/^(Run|Execute|Type|Use|Try):\s*/i, '');
-    
-    // Remove any $ prefix (common in examples)
-    command = command.replace(/^\$\s*/, '');
-    
-    // Ensure we have a valid command
-    if (!command || command.startsWith('Error')) {
-      throw new Error('Failed to generate a valid command');
+      
+      const response = await client.query(prompt, {
+        temperature: 0.1,
+        max_tokens: 256
+      });
+      
+      // Clean the output to get just the command
+      let command = response.response.trim();
+      
+      // Remove markdown code blocks if present
+      command = command.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '');
+      
+      // Remove any leading "Run: " or similar text
+      command = command.replace(/^(Run|Execute|Type|Use|Try):\s*/i, '');
+      
+      // Remove any $ prefix (common in examples)
+      command = command.replace(/^\$\s*/, '');
+      
+      stopThinking();
+      return command;
     }
     
-    return command;
+    // Original Ollama logic
+    // ... existing code for Ollama models ...
   } catch (error) {
-    // Make sure we stop the spinner even if there's an error
     stopThinking();
     return `echo "Error generating command: ${error.message}"`;
   }
@@ -711,6 +842,7 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
   const stopThinking = startThinking(getThinkingPhrasesForPatch());
   
   try {
+    // Extract common context information
     const prevPatchesText = prevPatches.length
       ? `\n\nPreviously attempted patches:\n${prevPatches.join('\n\n')}`
       : '';
@@ -723,187 +855,238 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
     // Get the exact lines of code where errors occur
     const exactErrorCode = getErrorLines(errorOutput);
     
-    // Get only the last two lines of the error output
-    const errorOutputLines = errorOutput.split('\n');
-    const lastTwoLines = errorOutputLines.slice(-2).join('\n');
-    
-    // Get the code context with reduced context size (±3 lines) for generatePatch
-    // Don't include file path and line headers in the context
+    // Get the code context with reduced context size (±3 lines)
     const context = buildErrorContext(errorOutput, 3, false);
 
-    const parts = [
-      // ───── Intro
-      'You are a code-fixing AI. Given an analysis, extract a structured patch to fix it.',
-      '',
-
-      // ───── Analysis
-      'Error Analysis',
-      analysis,
-      '',
-    
-      // ───── Current Directory (for context)
-      '### Current Working Directory',
-      currentDir,
-      '',
-    ];
-    
-    // Add code summary if provided
-    if (codeSummary) {
-      parts.push('### Code Summary');
-      parts.push(codeSummary);
-      parts.push('');
-    }
-    
-    // Add file content if provided - use raw content for patch generation to avoid line number issues
-    if (fileContent) {
-      parts.push('### File Content (First ~200 lines)');
-      parts.push(fileContent);
-      parts.push('');
-    }
-    
-    // Continue with the rest of the sections
-    parts.push(
-      // ───── Error Files (separate section)
-      '### Error File:',
-      errorFiles || '(none)',
-      '',
-      
-      // ───── Error Lines (separate section)
-      '### Error Line:',
-      errorLines || '(none)',
-      '',
-      
-      // ───── Error Code (exact line with error)
-      '### Error Code:',
-      exactErrorCode || '(none)',
-      '',
-    
-      // ───── Code Context (with reduced context)
-      '### Code Context (±3 lines from error locations)',
-      context || '(none)',
-      '',
-    
-      // ───── Previous patches (optional)
-      '### Previous Patches',
-      prevPatchesText || '(none)',
-      '',
-    );
-    
-    // Add structured output instructions
-    parts.push(
-      // ───── Instructions
-      '### Instructions',
-      'Analyze the error and generate a structured patch in JSON format with the following schema:',
-      '{',
-      '  "changes": [',
-      '    {',
-      '      "file_path": "relative/path/to/file.py",',
-      '      "line_number": 42,',
-      '      "old_line": "    z = x + yy",',
-      '      "new_line": "    z = x + y"',
-      '    },',
-      '    ...',
-      '  ],',
-      '  "description": "Fixed typo in variable name and syntax error"',
-      '}',
-      '',
-      '1. Ensure the file_path is relative to: ' + currentDir,
-      '2. Include the ENTIRE line for both old_line and new_line',
-      '3. For deletions, include old_line but set new_line to null',
-      '4. For additions, set line_number of the line that comes before and set old_line to ""',
-      '',
-      'Make sure to:',
-      '1. Only include lines that are actually changed',
-      '2. Never modify the same line twice',
-      '3. Keep the changes as minimal as possible',
-      '4. Maintain the correct order of operations',
-      '',
-      '### JSON Output'
-    );
-    
-    const prompt = parts.join('\n');
-    
-    // Define the schema for the patch response
-    const patchSchema = {
-      type: "object",
-      properties: {
-        changes: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              file_path: { type: "string" },
-              line_number: { type: "integer" },
-              old_line: { type: "string" },
-              new_line: { type: "string", nullable: true }
-            },
-            required: ["file_path", "line_number", "old_line"]
-          }
-        },
-        description: { type: "string" }
-      },
-      required: ["changes"]
-    };
-
-    let output;
-    try {
-      // Add diagnostic logs
-      //console.log(chalk.gray('Starting Ollama API call with model:', model));
-      const cpuThreads = Math.min(8, (cpus()?.length || 2));
-      
-      // Try using the structured output API if available
-      const response = await ollama.chat({
-        model: model,
-        messages: [{ role: 'user', content: prompt }],
-        format: patchSchema,  // Pass the schema to the format parameter
-        stream: false,        // Structured outputs don't work with streaming
-        options: {            
-          // Use the same optimized settings from patch_generation preset
-          temperature: 0.1,
-          num_predict: 768,
-          num_thread: cpuThreads,
-          num_batch: 32,
-          mmap: true,
-          int8: true,
-          f16: false,
-          repeat_penalty: 1.0,
-          top_k: 40,
-          top_p: 0.95,
-          cache_mode: "all",
-          use_mmap: true,
-          use_mlock: true
+    if (FrontierClient.isFrontierModel(model)) {
+      // Check for API key first
+      const hasKey = await KeyManager.hasKey(model);
+      if (!hasKey) {
+        stopThinking();
+        console.log(boxen(
+          `Please enter your API key for ${model}:`,
+          { ...BOX.CONFIRM, title: 'API Key Required' }
+        ));
+        
+        const apiKey = await askInput('API Key: ');
+        if (!apiKey) {
+          console.log(chalk.yellow('API key is required for frontier models.'));
+          return '';
         }
+        
+        const stored = await KeyManager.storeKey(model, apiKey);
+        if (!stored) {
+          console.log(chalk.red('Failed to store API key securely.'));
+          return '';
+        }
+      }
+
+      const client = new FrontierClient(model);
+      
+      const prompt = `
+You are a code-fixing AI. Given an analysis, extract a structured patch to fix it.
+
+Error Analysis:
+${analysis}
+
+Current Working Directory:
+${currentDir}
+
+${codeSummary ? `Code Summary:\n${codeSummary}\n` : ''}
+${fileContent ? `File Content:\n${fileContent}\n` : ''}
+
+Error File:
+${errorFiles || '(none)'}
+
+Error Line:
+${errorLines || '(none)'}
+
+Error Code:
+${exactErrorCode || '(none)'}
+
+Code Context (±3 lines from error locations):
+${context || '(none)'}
+
+Previous Patches:
+${prevPatchesText || '(none)'}
+
+Instructions:
+Generate a unified diff patch that fixes the error. The patch should:
+1. Use standard unified diff format (---, +++, @@)
+2. Include file paths relative to: ${currentDir}
+3. Show context lines around changes
+4. Be minimal and focused on the error
+5. Follow the exact format of unified diff
+
+Output ONLY the diff patch, no explanations or commentary.
+`.trim();
+      console.log(chalk.magenta('Prompt for generatePatch:'), prompt); // Log prompt for generatePatch
+      
+      const response = await client.query(prompt, {
+        temperature: 0.1,
+        max_tokens: 768
       });
       
-      // Log successful response
+      stopThinking();
+      console.log(chalk.magenta('Response from generatePatch client.query:'), JSON.stringify(response, null, 2)); // Log response
+      return response.response.trim();
+    } else {
+      // Ollama structured output approach
+      const parts = [
+        // ───── Intro
+        'You are a code-fixing AI. Given an analysis, extract a structured patch to fix it.',
+        '',
+        // ───── Analysis
+        'Error Analysis',
+        analysis,
+        '',
+        // ───── Current Directory (for context)
+        '### Current Working Directory',
+        currentDir,
+        '',
+      ];
       
-      // The response will automatically be in the schema format
-      const structuredPatch = JSON.parse(response.message.content);
+      // Add code summary if provided
+      if (codeSummary) {
+        parts.push('### Code Summary');
+        parts.push(codeSummary);
+        parts.push('');
+      }
       
-      console.log(chalk.gray(JSON.stringify(structuredPatch, null, 2)));
+      // Add file content if provided
+      if (fileContent) {
+        parts.push('### File Content (First ~200 lines)');
+        parts.push(fileContent);
+        parts.push('');
+      }
       
-      // Convert the structured patch to unified diff format
-      output = convertToUnifiedDiff(structuredPatch, currentDir);
+      // Continue with the rest of the sections
+      parts.push(
+        // ───── Error Files (separate section)
+        '### Error File:',
+        errorFiles || '(none)',
+        '',
+        
+        // ───── Error Lines (separate section)
+        '### Error Line:',
+        errorLines || '(none)',
+        '',
+        
+        // ───── Error Code (exact line with error)
+        '### Error Code:',
+        exactErrorCode || '(none)',
+        '',
+        
+        // ───── Code Context (with reduced context)
+        '### Code Context (±3 lines from error locations)',
+        context || '(none)',
+        '',
+        
+        // ───── Previous patches (optional)
+        '### Previous Patches',
+        prevPatchesText || '(none)',
+        '',
+      );
+      
+      // Add structured output instructions
+      parts.push(
+        // ───── Instructions
+        '### Instructions',
+        'Analyze the error and generate a structured patch in JSON format with the following schema:',
+        '{',
+        '  "changes": [',
+        '    {',
+        '      "file_path": "relative/path/to/file.py",',
+        '      "line_number": 42,',
+        '      "old_line": "    z = x + yy",',
+        '      "new_line": "    z = x + y"',
+        '    },',
+        '    ...',
+        '  ],',
+        '  "description": "Fixed typo in variable name and syntax error"',
+        '}',
+        '',
+        '1. Ensure the file_path is relative to: ' + currentDir,
+        '2. Include the ENTIRE line for both old_line and new_line',
+        '3. For deletions, include old_line but set new_line to null',
+        '4. For additions, set line_number of the line that comes before and set old_line to ""',
+        '',
+        'Make sure to:',
+        '1. Only include lines that are actually changed',
+        '2. Never modify the same line twice',
+        '3. Keep the changes as minimal as possible',
+        '4. Maintain the correct order of operations',
+        '',
+        '### JSON Output'
+      );
+      
+      const prompt = parts.join('\n');
+      
+      // Define the schema for the patch response
+      const patchSchema = {
+        type: "object",
+        properties: {
+          changes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file_path: { type: "string" },
+                line_number: { type: "integer" },
+                old_line: { type: "string" },
+                new_line: { type: "string", nullable: true }
+              },
+              required: ["file_path", "line_number", "old_line"]
+            }
+          },
+          description: { type: "string" }
+        },
+        required: ["changes"]
+      };
 
-
-    } catch (error) {
-      // Add detailed error logging
-      console.log(chalk.red('Ollama API call error details:'));
-      console.log(chalk.red('Error name:', error.name));
-      //console.log(chalk.red('Error message:', error.message));
-      //console.log(chalk.red('Error stack:', error.stack));
-      
-      // Fall back to the traditional approach if structured outputs fail
-      console.log(chalk.yellow(`Structured format unavailable - reverting to standard text output: ${error.message}`));
-      output = await runLLMWithTempScript(prompt, model, 'patch_generation');
+      try {
+        const cpuThreads = Math.min(8, (cpus()?.length || 2));
+        
+        // Try using the structured output API
+        const response = await ollama.chat({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          format: patchSchema,  // Pass the schema to the format parameter
+          stream: false,        // Structured outputs don't work with streaming
+          options: {            
+            // Use the same optimized settings from patch_generation preset
+            temperature: 0.1,
+            num_predict: 768,
+            num_thread: cpuThreads,
+            num_batch: 32,
+            mmap: true,
+            int8: true,
+            f16: false,
+            repeat_penalty: 1.0,
+            top_k: 40,
+            top_p: 0.95,
+            cache_mode: "all",
+            use_mmap: true,
+            use_mlock: true
+          }
+        });
+        
+        // The response will automatically be in the schema format
+        const structuredPatch = JSON.parse(response.message.content);
+        
+        // Convert the structured patch to unified diff format
+        const output = convertToUnifiedDiff(structuredPatch, currentDir);
+        stopThinking();
+        return output.trim();
+      } catch (error) {
+        // Fall back to the traditional approach if structured outputs fail
+        console.log(chalk.yellow(`Structured format unavailable - reverting to standard text output: ${error.message}`));
+        const output = await runLLMWithTempScript(prompt, model, 'patch_generation');
+        stopThinking();
+        return output.trim();
+      }
     }
-    
-    // Stop thinking spinner before processing result
-    stopThinking();
-    
-    return output.trim();
   } catch (error) {
-    // Make sure we stop the spinner even if there's an error
     stopThinking();
     console.error(chalk.red(`Error generating patch: ${error.message}`));
     return '';
