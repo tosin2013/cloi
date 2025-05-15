@@ -24,16 +24,27 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 
 // Import from our modules
-import { BOX, echoCommand, truncateOutput, createCommandBox, askYesNo, getReadline, closeReadline } from '../ui/terminalUI.js';
-import { startThinking } from '../core/llm.js';
-import { runCommand } from '../utils/command.js';
+import { BOX, echoCommand, truncateOutput, createCommandBox, askYesNo, getReadline, closeReadline, askInput } from '../ui/terminalUI.js';
+import { runCommand, ensureDir, writeDebugLog } from '../utils/cliTools.js';
 import { readHistory, lastRealCommand, selectHistoryItem } from '../utils/history.js';
-import { analyzeWithLLM, determineErrorType, generateTerminalCommandFix, generatePatch, selectModelItem, installModel, summarizeCodeWithLLM, readModels, getAvailableModels } from '../core/llm.js';
+import { 
+  analyzeWithLLM, 
+  determineErrorType, 
+  generateTerminalCommandFix, 
+  generatePatch, 
+  summarizeCodeWithLLM, 
+  getInstalledModels as readModels, 
+  getAllAvailableModels as getAvailableModels,
+  installModelIfNeeded as installModel
+} from '../core/index.js';
 import { extractDiff, confirmAndApply } from '../utils/patch.js';
-import { ensureDir, writeDebugLog } from '../utils/file.js';
 import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../utils/traceback.js';
+import { startThinking } from '../core/ui/thinking.js';
+import { FrontierClient } from '../core/executor/frontier.js';
+import { KeyManager } from '../utils/keyManager.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
@@ -90,7 +101,7 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
         }
   
         case '/model': {
-          const newModel = await selectModelItem();
+          const newModel = await selectModelFromList();
           if (newModel) {
             currentModel = newModel;
             process.stdout.write('\n');
@@ -391,7 +402,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     let currentModel = argv.model;
     
     if (currentModel) {
-      const installedModels = readModels();
+      const isOnline = checkNetwork();
+      const installedModels = await readModels();
       
       if (!installedModels.includes(currentModel)) {
         console.log(boxen(
@@ -437,3 +449,165 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     console.error(chalk.red(`Fatal: ${err.message}`));
     process.exit(1);
   });
+
+/* ───────────────────────── Model Selection ────────────────────────────── */
+/**
+ * Allows the user to select a model using an interactive picker.
+ * @returns {Promise<string|null>} - Selected model or null if canceled
+ */
+async function selectModelFromList() {
+  const { makePicker } = await import('../ui/terminalUI.js');
+  const { FrontierClient } = await import('../core/executor/frontier.js');
+  const { KeyManager } = await import('../utils/keyManager.js');
+  
+  const isOnline = checkNetwork();
+  let models;
+  let title;
+
+  if (isOnline) {
+    models = getAvailableModels();
+    title = 'Available Models';
+    // Get installed models to check status
+    const installedModels = await readModels();
+    
+    // To ensure we don't miss any models, create a combined list
+    const allModels = [...new Set([...models, ...installedModels])];
+    
+    // Create display-friendly versions with installation status
+    const displayNames = allModels.map(model => {
+      const isInstalled = installedModels.includes(model);
+      const isFrontier = FrontierClient.isFrontierModel(model);
+      const displayName = model.replace(/:latest$/, '');
+      
+      // Color frontier models green, installed models with checkmark
+      if (isFrontier) {
+        return `${chalk.green(displayName)} ${chalk.gray('(Frontier)')}`;
+      }
+      return `${displayName} ${isInstalled ? chalk.green('✓') : chalk.gray('-')}`;
+    });
+    
+    // Create pairs with install status for sorting
+    const modelPairs = displayNames.map((display, i) => {
+      const isInstalled = installedModels.includes(allModels[i]);
+      const isFrontier = FrontierClient.isFrontierModel(allModels[i]);
+      return [display, allModels[i], isInstalled, isFrontier];
+    });
+    
+    // Sort: frontier models first, then installed, then alphabetically
+    modelPairs.sort((a, b) => {
+      if (a[3] !== b[3]) return b[3] - a[3]; // Frontier models first
+      if (a[2] !== b[2]) return b[2] - a[2]; // Then installed models
+      return a[0].localeCompare(b[0]); // Then alphabetically
+    });
+    
+    // Extract sorted display names and original models
+    const sortedDisplayNames = modelPairs.map(pair => pair[0]);
+    const sortedModels = modelPairs.map(pair => pair[1]);
+    
+    // Create picker with sorted display names
+    const picker = makePicker(sortedDisplayNames, title);
+    const selected = await picker();
+    
+    if (!selected) return null;
+    
+    // Extract the actual model name from the display name by removing color codes and (Frontier) suffix
+    const cleanSelected = selected.replace(/\u001b\[\d+m/g, '').replace(/\s*\(Frontier\)\s*$/, '').trim();
+    const selectedModel = sortedModels[sortedDisplayNames.indexOf(selected)];
+    const isFrontier = FrontierClient.isFrontierModel(selectedModel);
+    
+    console.log(chalk.gray(`Selected model: ${selectedModel} (isFrontier: ${isFrontier})`));
+    
+    if (isFrontier) {
+      // Check if we already have an API key
+      const hasKey = await KeyManager.hasKey(selectedModel);
+      
+      if (!hasKey) {
+        console.log(boxen(
+          `Please enter your API key for ${selectedModel}:`,
+          { ...BOX.CONFIRM, title: 'API Key Required' }
+        ));
+        
+        const apiKey = await askInput('API Key: ');
+        if (!apiKey) {
+          console.log(chalk.yellow('API key is required for frontier models.'));
+          return null;
+        }
+        
+        const stored = await KeyManager.storeKey(selectedModel, apiKey);
+        if (!stored) {
+          console.log(chalk.red('Failed to store API key securely.'));
+          return null;
+        }
+      }
+
+      // Test the API key to make sure it works
+      try {
+        const client = new FrontierClient(selectedModel);
+        await client.getCredentials();
+      } catch (error) {
+        console.log(chalk.red(`Invalid or missing API key: ${error.message}`));
+        // Delete the invalid key
+        await KeyManager.deleteKey(selectedModel);
+        return null;
+      }
+      
+      return selectedModel;
+    }
+    
+    const isInstalled = installedModels.includes(selectedModel);
+    
+    if (!isInstalled) {
+      console.log(boxen(
+        `Install ${selectedModel}?\nThis may take a few minutes.\n\nProceed (y/N):`,
+        { ...BOX.CONFIRM, title: 'Confirm Installation' }
+      ));
+      const response = await askYesNo('', true);
+      console.log(response ? 'y' : 'N');
+      if (response) {
+        const success = await installModel(selectedModel);
+        if (!success) return null;
+      } else {
+        return null;
+      }
+    }
+    
+    return selectedModel;
+  } else {
+    models = await readModels();
+    title = 'Installed Models';
+    
+    // Create display-friendly versions of model names (strip ":latest" suffix)
+    const displayNames = models.map(model => {
+      const isFrontier = FrontierClient.isFrontierModel(model);
+      const displayName = model.replace(/:latest$/, '');
+      return isFrontier ? chalk.green(displayName) : displayName;
+    });
+    
+    // Create sorted pairs of [displayName, originalModel] for sorting and maintaining mapping
+    const modelPairs = displayNames.map((display, i) => [display, models[i]]);
+    modelPairs.sort((a, b) => a[0].localeCompare(b[0]));
+    
+    // Extract sorted display names and original models
+    const sortedDisplayNames = modelPairs.map(pair => pair[0]);
+    const sortedModels = modelPairs.map(pair => pair[1]);
+    
+    // Create picker with sorted display names
+    const picker = makePicker(sortedDisplayNames, title);
+    const selected = await picker();
+    // Map back to the original model name if something was selected
+    return selected ? sortedModels[sortedDisplayNames.indexOf(selected)] : null;
+  }
+}
+
+/**
+ * Checks if network is available by checking if DNS resolution works
+ * @returns {boolean} - True if network is available
+ */
+function checkNetwork() {
+  try {
+    execSync('ping -c 1 -W 1 1.1.1.1 > /dev/null 2>&1', { stdio: 'ignore' });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}

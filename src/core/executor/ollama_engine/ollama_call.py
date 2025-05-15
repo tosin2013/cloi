@@ -248,73 +248,71 @@ class OllamaSetup:
                             if "response" in json_response:
                                 full_response += json_response["response"]
                             if json_response.get("done", False):
-                                break
+                                # Extract final metadata when done
+                                eval_count = json_response.get("eval_count", 0)
+                                eval_duration = json_response.get("eval_duration", 0)
+                                load_duration = json_response.get("load_duration", 0)
+                                
+                                return {
+                                    "response": full_response,
+                                    "tokens": eval_count,
+                                    "duration_ms": eval_duration,
+                                    "load_ms": load_duration
+                                }
                         except json.JSONDecodeError:
+                            print(f"Warning: Failed to parse JSON line: {line}")
                             continue
                 
-                return {"response": full_response}
+                # Return response if done wasn't found
+                return {
+                    "response": full_response,
+                    "tokens": 0,
+                    "duration_ms": 0,
+                    "load_ms": 0
+                }
+            
+            except requests.RequestException as e:
+                print(f"Request error (attempt {attempt+1}/{max_retries}): {e}")
                 
-            except requests.exceptions.RequestException as e:
                 if attempt < max_retries - 1:
-                    print(f"Connection attempt {attempt + 1} failed: {e}")
                     print(f"Retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
-                    return {"error": f"Error communicating with Ollama API: {str(e)}"}
+                    print("Failed to query model after max retries")
+                    return {
+                        "response": f"Error: Failed to query model after {max_retries} attempts: {str(e)}",
+                        "error": str(e)
+                    }
+        
+        return {
+            "response": "Error: Unknown error during query",
+            "error": "Unknown error"
+        }
 
     def ensure_setup(self) -> bool:
         """
-        Ensure Ollama is installed, running, and the model is available.
-        Returns True if setup is successful, False otherwise.
-        """
-        # Check operating system compatibility
-        if self.system not in ["linux", "darwin"]:
-            print(f"This script supports Linux and macOS only. Detected system: {platform.system()}")
-            print("Please install Ollama manually from https://ollama.com")
-            return False
-            
-        print(f"Running on {platform.system()} {platform.release()}")
+        Ensure Ollama is installed, running, and the model is available
         
+        Returns:
+            bool: True if setup is successful, False otherwise
+        """
         # Check if Ollama is installed
         if not self.check_installation():
-            # Install Ollama if not installed
+            print("Ollama is not installed.")
             if not self.install_ollama():
-                print("Failed to install Ollama. Please install manually and try again.")
                 return False
-        else:
-            print("Ollama is already installed")
         
-        # Start Ollama service
-        if not self.start_service():
-            print("Failed to start Ollama service. Please start it manually and try again.")
-            return False
+        # Check if service is running
+        if not self.check_service_running():
+            print("Ollama service is not running.")
+            if not self.start_service():
+                return False
         
-        # Pull model if needed
-        if not self.pull_model():
-            print(f"Failed to pull the {self.model_name} model. Please try again later.")
-            return False
-            
-        return True
+        # Check if model is available
+        if self.model_name not in self.list_models():
+            print(f"Model {self.model_name} is not available.")
+            if not self.pull_model():
+                return False
         
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Ollama Setup and Model Management")
-    parser.add_argument("--model", type=str, default="phi4", help="Model name to use")
-    parser.add_argument("--pull", action="store_true", help="Pull the specified model")
-    parser.add_argument("--delete", action="store_true", help="Delete the specified model")
-    args = parser.parse_args()
-    
-    ollama = OllamaSetup(model_name=args.model)
-    
-    if args.pull:
-        if not ollama.ensure_setup():
-            sys.exit(1)
-        if not ollama.pull_model():
-            sys.exit(1)
-    elif args.delete:
-        if not ollama.delete_model(args.model):
-            sys.exit(1)
-    else:
-        if not ollama.ensure_setup():
-            sys.exit(1)
-        
+        return True 

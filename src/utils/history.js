@@ -10,7 +10,7 @@
 import { promises as fs } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { runCommand } from './command.js';
+import { runCommand } from './cliTools.js';
 import { makePicker } from '../ui/terminalUI.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';

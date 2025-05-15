@@ -8,7 +8,7 @@
  */
 
 import { existsSync } from 'fs';
-import { runCommand } from './command.js'; // Updated import path
+import { runCommand } from './cliTools.js'; // Updated import path
 import boxen from 'boxen';
 import { BOX } from '../ui/terminalUI.js';
 import { basename } from 'path';

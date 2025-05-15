@@ -248,62 +248,92 @@ class LLMOptimizer:
                             input_length: Optional[int] = None,
                             deterministic: bool = False,
                             use_quantization: bool = True) -> Dict[str, Any]:
-        """Get optimized options for LLM calls
+        """Get optimized options for the model based on input characteristics
         
         Args:
-            options: Optional base options to merge with optimized settings
-            input_length: Length of input text for dynamic batch sizing
-            deterministic: Whether to use more deterministic settings
-            use_quantization: Whether to use quantization settings
+            options: Base options to enhance
+            input_length: Length of input prompt for optimization tuning
+            deterministic: Whether to optimize for deterministic output
+            use_quantization: Whether to use quantization
             
         Returns:
-            Dictionary of optimized options
+            Dict with optimized options
         """
-        if options is None:
-            options = {}
-            
-        # Base optimized options
-        optimized = {
-            "temperature": 0.1 if deterministic else 0.2,
-            "num_predict": min(256, input_length + 100) if input_length else 256,
-            "num_thread": min(8, os.cpu_count() or 2),
-            "num_batch": 64,  # Increased batch size for faster processing
-            "cache_mode": "all",
-            "mmap": True,
-            "int8": True,
-            "f16": False,
-            "repeat_penalty": 1.0,  # Disable repeat penalty for speed
-            "top_k": 1,  # Only consider top token for speed
-            "top_p": 0.1  # Lower top_p for faster sampling
-        }
+        # Start with default options
+        opt_options = options.copy() if options else {}
         
-        # Add quantization settings if enabled
+        # Base thread count on available CPUs
+        cpu_count = os.cpu_count() or 4
+        thread_count = min(8, cpu_count)  # Cap at 8 threads
+        
+        # Scale batch size based on input length and available threads
+        if input_length:
+            # For very short inputs, use smaller batch size
+            if input_length < 100:
+                batch_size = min(32, thread_count * 4)  # Smaller batch for short prompts
+            # For medium inputs
+            elif input_length < 500:
+                batch_size = min(64, thread_count * 8)
+            # For long inputs
+            else:
+                batch_size = min(128, thread_count * 16)
+        else:
+            # Default batch size if input length unknown
+            batch_size = 32
+        
+        # Set quantization parameters
         if use_quantization:
-            optimized.update({
-                "use_mmap": True,
-                "use_mlock": True,
+            opt_options.update({
+                "int8": True,  # Use int8 quantization
+                "f16": False,  # Disable f16
                 "block_size": 32,  # Block size for block-wise quantization
                 "per_block_scales": [1.0],  # Initial scale
                 "zero_points": [0]  # Initial zero point
             })
         
-        # Merge with provided options
-        optimized.update(options)
-        return optimized
+        # Set thread and batch parameters
+        opt_options.update({
+            "num_thread": thread_count,
+            "num_batch": batch_size,
+            "mmap": True,      # Memory mapping for better performance
+            "cache_mode": "all" # Cache everything for better repeat performance
+        })
+        
+        # Add deterministic settings if needed
+        if deterministic:
+            opt_options.update({
+                "top_k": 1,
+                "top_p": 0.1,
+                "temperature": 0.0
+            })
+            
+        return opt_options
     
     @staticmethod
     def get_optimized_prompt(prompt: str, max_length: int = 1000) -> str:
-        """Optimize prompt for better performance
+        """Optimize prompt for LLM processing
         
         Args:
-            prompt: Original prompt
-            max_length: Maximum prompt length
+            prompt: The original prompt
+            max_length: Maximum allowed prompt length
             
         Returns:
             Optimized prompt
         """
-        # Truncate if too long
+        # Remove extraneous whitespace
+        prompt = prompt.strip()
+        
+        # Remove timestamps
+        prompt = TIMESTAMP_PATTERN.sub('', prompt)
+        
+        # If prompt is too long, truncate with indicator
         if len(prompt) > max_length:
-            prompt = prompt[:max_length] + "..."
-            
-        return prompt.strip() 
+            # Try to truncate at a natural boundary like a newline
+            truncate_point = prompt[:max_length].rfind('\n')
+            if truncate_point > max_length // 2:
+                return prompt[:truncate_point] + "\n[... truncated ...]"
+            else:
+                # Fall back to hard truncation
+                return prompt[:max_length] + "\n[... truncated ...]"
+        
+        return prompt 

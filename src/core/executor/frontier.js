@@ -1,10 +1,15 @@
-import { KeyManager } from './keyManager.js';
-import { getApiEndpoint, getModelConfig } from './modelConfig.js';
+/**
+ * Frontier Client Module
+ *
+ * Client for interacting with frontier models (GPT-4.1, O3) via API.
+ * Handles authentication, request formatting, and response normalization.
+ */
+import { KeyManager } from '../../utils/keyManager.js';
+import { getApiEndpoint, getModelConfig } from './endpoints/index.js';
 import boxen from 'boxen';
-import { askInput } from '../ui/terminalUI.js';
-import { BOX } from '../ui/terminalUI.js';
+import { askInput } from '../../ui/terminalUI.js';
+import { BOX } from '../../ui/terminalUI.js';
 import chalk from 'chalk';
-import fs from 'fs';
 import { dirname, join } from 'path';
 
 /**
@@ -152,6 +157,15 @@ export class FrontierClient {
 
     switch (this.config.provider) {
       case 'openai':
+        // Handle max tokens differently for o4-mini and o3
+        let maxOutputTokens = Math.min(options.max_tokens || 512, this.config.maxTokens);
+        
+        // For o4-mini and o3, don't artificially restrict token output
+        if (this.config.modelId.includes('o4-mini') || this.config.modelId.includes('o3')) {
+          // Use higher tokens since it needs more room to think
+          maxOutputTokens = Math.min(1024, this.config.maxTokens);
+        }
+
         // Base request structure for all OpenAI models
         const requestBody = {
           model: this.config.modelId,
@@ -162,24 +176,24 @@ export class FrontierClient {
             }
           },
           tools: [],
-          max_output_tokens: Math.min(options.max_tokens || 512, this.config.maxTokens),
+          max_output_tokens: maxOutputTokens,
           top_p: 1,
           store: true
         };
 
         // Handle model-specific parameters:
-        const isReasoningModel = this.config.modelId.startsWith('o3-');
+        const isReasoningModel = this.config.modelId.startsWith('o3-') || this.config.modelId.startsWith('o4-');
         
-        // For reasoning models (o3 family)
+        // For reasoning models (o3/o4 family)
         if (isReasoningModel) {
-          // Add reasoning.effort parameter for o3 models
+          // Add reasoning.effort parameter for o3/o4 models
           requestBody.reasoning = {
             effort: "low" // Use low to conserve tokens
           };
         } 
         // For standard models (gpt-4.1, etc.)
         else {
-          // Empty reasoning object for non-o3 models
+          // Empty reasoning object for non-o3/o4 models
           requestBody.reasoning = {};
           
           // Temperature parameter is supported for standard models
@@ -275,10 +289,9 @@ export class FrontierClient {
    */
   static isFrontierModel(model) {
     const frontierModels = [
-      'gpt-4.1-mini',
       'gpt-4.1',
       'o3',
-      'o3-mini'
+      'o4-mini'
     ];
     const isFrontier = frontierModels.includes(model);
     return isFrontier;

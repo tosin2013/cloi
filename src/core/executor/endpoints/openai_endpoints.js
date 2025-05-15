@@ -1,16 +1,15 @@
 /**
- * Model Configuration Module
+ * OpenAI Endpoints Configuration Module
  * 
- * Defines API endpoints and configurations for different frontier models.
+ * Defines API endpoints and configurations for OpenAI models.
  * Users can override these settings via environment variables or configuration files.
  */
 
-// Default API endpoints for different model providers
+// Default API endpoints for OpenAI models
 export const DEFAULT_ENDPOINTS = {
   'gpt-4.1': 'https://api.openai.com/v1',
-  'gpt-4.1-mini': 'https://api.openai.com/v1',
   'o3': 'https://api.openai.com/v1',
-  'o3-mini': 'https://api.openai.com/v1'
+  'o4-mini': 'https://api.openai.com/v1'
 };
 
 // Model-specific configurations
@@ -23,14 +22,6 @@ export const MODEL_CONFIGS = {
     keyEnvVar: 'OPENAI_API_KEY',
     modelId: 'gpt-4.1-2025-04-14'  // Actual OpenAI model ID
   },
-  'gpt-4.1-mini': {
-    provider: 'openai',
-    requiresOrg: false,
-    maxTokens: 4096,
-    endpointEnvVar: 'OPENAI_API_ENDPOINT',
-    keyEnvVar: 'OPENAI_API_KEY',
-    modelId: 'gpt-4.1-mini-2025-04-14'  // Actual OpenAI model ID
-  },
   'o3': {
     provider: 'openai',
     requiresOrg: false,
@@ -39,13 +30,13 @@ export const MODEL_CONFIGS = {
     keyEnvVar: 'OPENAI_API_KEY',
     modelId: 'o3-2025-04-16'  // Actual OpenAI model ID
   },
-  'o3-mini': {
+  'o4-mini': {
     provider: 'openai',
     requiresOrg: false,
     maxTokens: 8192,
     endpointEnvVar: 'OPENAI_API_ENDPOINT',
     keyEnvVar: 'OPENAI_API_KEY',
-    modelId: 'o3-mini-2025-01-31'  // Actual OpenAI model ID
+    modelId: 'o4-mini-2025-04-16'  // Actual OpenAI model ID
   }
 };
 

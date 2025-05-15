@@ -1,8 +1,8 @@
 /**
- * Temporary Python Script Module
+ * Python Executor Module
  * 
  * Facilitates communication with Ollama language models via Python.
- * This module creates a temporary Python script with optimized settings
+ * This module creates and executes Python scripts with optimized settings
  * for efficient LLM interactions. The approach allows for better performance
  * configuration and processing than direct JS-to-Ollama communication,
  * particularly for complex prompts and responses.
@@ -25,11 +25,21 @@ import os
 
 # Add parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from ollama_call import OllamaSetup
 from optimization import LLMOptimizer
 
 def analyze_error(prompt, model_name, optimization_set="error_analysis"):
+    # Check for file-based prompt input (starting with @)
+    if prompt.startswith('@'):
+        try:
+            prompt_file = prompt[1:]  # Remove the @ prefix
+            with open(prompt_file, 'r') as f:
+                prompt = f.read()
+        except Exception as e:
+            return f"Error reading prompt file: {str(e)}"
+
     # Initialize Ollama
     ollama = OllamaSetup(model_name=model_name)
     if not ollama.ensure_setup():
@@ -130,23 +140,27 @@ if __name__ == "__main__":
 /* ───────────────────────── LLM Query Runner ────────────────────────────── */
 /**
  * Runs an LLM query using a Python script with optimized settings.
- * Creates a temporary Python script, executes it, and captures the output.
+ * Creates a Python script, executes it, and captures the output.
  * 
  * @param {string} prompt - The prompt to send to the LLM
  * @param {string} model - The model name to use (e.g., 'phi4:latest')
  * @param {string} [optimization_set="error_analysis"] - The optimization set to use
  * @returns {Promise<string>} - The LLM response
  */
-export async function runLLMWithTempScript(prompt, model, optimization_set = "error_analysis") {
-  const tempScriptPath = join(__dirname, 'temp_analyze.py');
+export async function runLLMWithPython(prompt, model, optimization_set = "error_analysis") {
+  const scriptPath = join(__dirname, 'ollama_query.py');
   
   try {
-    // Write the temporary Python script
-    await fs.writeFile(tempScriptPath, PYTHON_SCRIPT_TEMPLATE);
+    // Write the Python script
+    await fs.writeFile(scriptPath, PYTHON_SCRIPT_TEMPLATE);
     
-    // Run the script with the prompt, model, and optimization set as arguments
+    // Create a file for the prompt to avoid command line issues
+    const promptPath = join(__dirname, 'prompt_input.txt');
+    await fs.writeFile(promptPath, prompt, 'utf8');
+    
+    // Run the script with the prompt file, model, and optimization set as arguments
     return await new Promise((resolve) => {
-      const child = spawn('python3', [tempScriptPath, prompt, model, optimization_set]);
+      const child = spawn('python3', [scriptPath, `@${promptPath}`, model, optimization_set]);
       let output = '';
       
       child.stdout.on('data', (data) => {
@@ -159,10 +173,11 @@ export async function runLLMWithTempScript(prompt, model, optimization_set = "er
       
       child.on('close', async () => {
         try {
-          // Clean up the temporary file
-          await fs.unlink(tempScriptPath);
+          // Clean up the files
+          await fs.unlink(scriptPath);
+          await fs.unlink(promptPath);
         } catch (error) {
-          console.error('Error cleaning up temp file:', error);
+          console.error('Error cleaning up files:', error);
         }
         
         // Extract the result from between the marker lines
@@ -173,7 +188,8 @@ export async function runLLMWithTempScript(prompt, model, optimization_set = "er
   } catch (error) {
     // Clean up in case of error
     try {
-      await fs.unlink(tempScriptPath);
+      await fs.unlink(scriptPath);
+      await fs.unlink(join(__dirname, 'prompt_input.txt'));
     } catch {
       // Ignore errors during cleanup
     }
