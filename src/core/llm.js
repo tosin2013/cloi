@@ -895,6 +895,45 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
     // Get the code context with reduced context size (±3 lines)
     const context = buildErrorContext(errorOutput, 3, false);
 
+    // If fileInfo doesn't have content but we've identified error files, try to load their content
+    if (!fileInfo.content && errorFiles) {
+      try {
+        const filePath = errorFiles.split('\n')[0]; // Take the first error file
+        const fullPath = filePath.startsWith('/') ? filePath : `${currentDir}/${filePath}`;
+        
+        // Try to read the file content
+        const content = await fs.readFile(fullPath, 'utf-8');
+        
+        if (content) {
+          // Get the error line number for context
+          const lineNumberMatch = errorLines ? parseInt(errorLines.split('\n')[0], 10) : null;
+          const lineNumber = isNaN(lineNumberMatch) ? 1 : lineNumberMatch;
+          
+          // Set context range - 10 lines before and after the error line
+          const startLine = Math.max(1, lineNumber - 10);
+          const contentLines = content.split('\n');
+          const endLine = Math.min(contentLines.length, lineNumber + 10);
+          
+          // Extract relevant portion of the file
+          const relevantContent = contentLines.slice(startLine - 1, endLine).join('\n');
+          
+          // Update fileInfo with content
+          fileInfo = {
+            ...fileInfo,
+            content: relevantContent,
+            withLineNumbers: contentLines.slice(startLine - 1, endLine)
+              .map((line, idx) => `${startLine + idx}: ${line}`)
+              .join('\n'),
+            start: startLine,
+            end: endLine,
+            filePath: filePath
+          };
+        }
+      } catch (err) {
+        console.log(chalk.yellow(`Failed to read error file: ${err.message}`));
+      }
+    }
+
     if (FrontierClient.isFrontierModel(model)) {
       // Check for API key first
       const hasKey = await KeyManager.hasKey(model);
@@ -921,8 +960,8 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
       const client = new FrontierClient(model);
       
       // Format file content info for the prompt
-      const fileContentInfo = fileInfo && fileInfo.content 
-        ? `File Content (lines ${fileInfo.start || 1}-${fileInfo.end || (fileInfo.content ? fileInfo.content.split('\n').length : 1)}):\n${fileInfo.content}\n` 
+      const fileContentInfo = fileInfo && (fileInfo.withLineNumbers || fileInfo.content)
+        ? `File Content (lines ${fileInfo.start || 1}-${fileInfo.end || '?'}):\n${fileInfo.withLineNumbers || fileInfo.content}\n` 
         : '';
       
       // Request JSON-structured patch instead of raw diff
@@ -986,7 +1025,7 @@ Make sure to:
 
 Return ONLY the JSON object with no additional text or code blocks.
 `.trim();
-      
+
       const llmResponse = await client.query(prompt, {
         temperature: 0.1,
         max_tokens: 384
@@ -1048,9 +1087,9 @@ Return ONLY the JSON object with no additional text or code blocks.
       }
       
       // Add file content if provided
-      if (fileInfo && fileInfo.content) {
-        parts.push('### File Content (First ~200 lines)');
-        parts.push(fileInfo.content);
+      if (fileInfo && (fileInfo.withLineNumbers || fileInfo.content)) {
+        parts.push('### File Content (lines ' + (fileInfo.start || 1) + '-' + (fileInfo.end || '?') + ')');
+        parts.push(fileInfo.withLineNumbers || fileInfo.content);
         parts.push('');
       }
       
