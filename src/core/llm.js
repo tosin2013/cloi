@@ -64,17 +64,12 @@ export function readModels() {
   try {
     const output = execSync('ollama list', { encoding: 'utf8' });
     
-    // Log the raw output for debugging
-    //console.log(chalk.gray('Detected installed models:'));
-    //console.log(chalk.gray(output));
-    
     const models = output
       .split(/\r?\n/)
       .slice(1)                         // drop header line: NAME   SIZE
       .filter(Boolean)
       .map(l => l.split(/\s+/)[0]);    // first token is the model name
     
-    //console.log(chalk.gray('Detected installed models:'), models);
     return models;
   } catch (error) {
     console.error(chalk.red('Error reading models:'), error.message);
@@ -532,7 +527,6 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInf
       promptParts.push('3. FIX: Propose a concrete solution to fix the error.');
       
       const prompt = promptParts.join('\n');
-      // console.log(chalk.blue('Prompt for analyzeWithLLM:'), prompt); // Log prompt for analyzeWithLLM
       
       const llmResponse = await client.query(prompt, {
         temperature: 0.3,
@@ -540,7 +534,6 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInf
       });
       
       stopThinking();
-      // console.log(chalk.blue('Response from analyzeWithLLM client.query:'), JSON.stringify(llmResponse, null, 2)); // Log response
       analysis = llmResponse.response.trim();
       reasoning = llmResponse.reasoning ? llmResponse.reasoning.trim() : '';
       return { analysis, reasoning };

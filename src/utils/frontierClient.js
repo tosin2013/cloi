@@ -27,7 +27,6 @@ export class FrontierClient {
   async getCredentials() {
     try {
       const apiKey = await KeyManager.getKey(this.model);
-      console.log(chalk.gray(`Checking API key for ${this.model}: ${apiKey ? 'found' : 'not found'}`));
       
       if (!apiKey) {
         console.log(chalk.yellow(`No API key found for ${this.model}, prompting for input...`));
@@ -43,7 +42,6 @@ export class FrontierClient {
           throw new Error('API key is required for frontier models.');
         }
         
-        console.log(chalk.gray('Attempting to store new API key...'));
         const stored = await KeyManager.storeKey(this.model, newApiKey);
         if (!stored) {
           console.log(chalk.red('Failed to store API key securely'));
@@ -100,24 +98,20 @@ export class FrontierClient {
 
       // Prepare request body based on provider
       const body = this.prepareRequestBody(prompt, options);
-      console.log(chalk.gray('Request Body:'), JSON.stringify(body, null, 2));
 
       // Use the correct endpoint based on provider
       const endpoint = this.config.provider === 'openai' ? 
         this.endpoint + '/responses' : 
         this.endpoint + '/completions';
 
-      console.log(chalk.gray(`Making API request to ${endpoint}`));
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body)
       });
-      console.log(chalk.gray('Raw Response Status:'), response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        console.log(chalk.red('API request failed raw error data:'), errorData);
         
         if (response.status === 401) {
           // Invalid API key - delete it and throw error
@@ -131,9 +125,7 @@ export class FrontierClient {
       }
 
       const data = await response.json();
-      console.log(chalk.gray('Raw API Response Data:'), JSON.stringify(data, null, 2));
       const normalized = this.normalizeResponse(data);
-      console.log(chalk.gray('Normalized API Response:'), JSON.stringify(normalized, null, 2));
       return normalized;
     } catch (error) {
       // If the error is about invalid/missing API key, delete the stored key
@@ -212,7 +204,6 @@ export class FrontierClient {
    * @private
    */
   normalizeResponse(data) {
-    console.log(chalk.blue('Normalizing response from provider:'), this.config.provider, JSON.stringify(data, null, 2));
     let mainResponseText = '';
     let reasoningText = '';
     let usageData = data.usage || {};
@@ -247,10 +238,6 @@ export class FrontierClient {
           mainResponseText = data.choices[0].message.content;
         }
         
-        if (!mainResponseText && !reasoningText) {
-           console.log(chalk.yellow('OpenAI response structure not recognized for text extraction, returning empty response. Input data:'), JSON.stringify(data, null, 2));
-        }
-        
         return {
           response: mainResponseText,
           reasoning: reasoningText,
@@ -265,9 +252,6 @@ export class FrontierClient {
         }
         // Anthropic doesn't typically provide separate reasoning in this structure via cloi's current setup.
         // If it did, similar extraction logic would go here.
-        if (!mainResponseText) {
-            console.log(chalk.yellow('Anthropic response structure not recognized for text extraction, returning empty response. Input data:'), JSON.stringify(data, null, 2));
-        }
         return {
           response: mainResponseText,
           reasoning: '', // No separate reasoning field from Anthropic in current parsing
@@ -295,7 +279,6 @@ export class FrontierClient {
       'o3-mini'
     ];
     const isFrontier = frontierModels.includes(model);
-    console.log(chalk.gray(`Checking if ${model} is a frontier model: ${isFrontier}`));
     return isFrontier;
   }
 } 

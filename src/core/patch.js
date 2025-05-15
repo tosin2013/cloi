@@ -313,9 +313,6 @@ export function convertToUnifiedDiff(patchData, currentDir) {
  * @returns {string} - Formatted hunks
  */
 function generateHunks(changes, filePath) {
-  // Add logging for debugging
-  //console.log('Generating hunks from changes:', JSON.stringify(changes, null, 2));
-  
   if (!changes || changes.length === 0) {
     console.log('No changes to process');
     return '';
@@ -344,8 +341,6 @@ function generateHunks(changes, filePath) {
       const hunkHeader = `@@ -${lineNumber},${deletions} +${lineNumber},${additions} @@`;
       output += hunkHeader + '\n';
       
-      //console.log('Generated hunk header:', hunkHeader);
-      
       // Add the change
       if (change.old_line !== undefined && change.old_line !== null) {
         output += processCodeLine(change.old_line, '-', filePath);
@@ -354,10 +349,6 @@ function generateHunks(changes, filePath) {
         output += processCodeLine(change.new_line, '+', filePath);
       }
     });
-    
-    // Log the final output for debugging
-    // console.log('Generated diff output:');
-    // console.log(output);
     
     return output;
   } catch (error) {
