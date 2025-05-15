@@ -460,17 +460,20 @@ export function startDownloading(modelName) {
  * Analyzes error output with an LLM using a Python script with optimized settings.
  * @param {string} errorOutput - The error output to analyze.
  * @param {string} [model='phi4:latest'] - The Ollama model to use.
- * @param {string} [fileContent=''] - Optional file content for additional context.
+ * @param {string} [fileInfo={}] - Optional file information for additional context.
  * @param {string} [codeSummary=''] - Optional code summary for additional context.
+ * @param {string} [filePath=''] - Optional file path for additional context.
  * @returns {Promise<string>} - The analysis text from the LLM.
  */
-export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileContent = '', codeSummary = '', filePath) {
+export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInfo = {}, codeSummary = '', filePath) {
   // Start thinking spinner to provide visual feedback
   const stopThinking = startThinking(getThinkingPhrasesForAnalysis());
+  let analysis = '';
+  let reasoning = '';
   
   try {
     if (FrontierClient.isFrontierModel(model)) {
-      // Check for API key first
+      // Check for API key first (this logic might be better suited inside FrontierClient.getCredentials or a wrapper)
       const hasKey = await KeyManager.hasKey(model);
       if (!hasKey) {
         stopThinking();
@@ -482,13 +485,13 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
         const apiKey = await askInput('API Key: ');
         if (!apiKey) {
           console.log(chalk.yellow('API key is required for frontier models.'));
-          return 'Error: API key is required for frontier models.';
+          return { analysis: 'Error: API key is required for frontier models.', reasoning: '' };
         }
         
         const stored = await KeyManager.storeKey(model, apiKey);
         if (!stored) {
           console.log(chalk.red('Failed to store API key securely.'));
-          return 'Error: Failed to store API key securely.';
+          return { analysis: 'Error: Failed to store API key securely.', reasoning: '' };
         }
       }
 
@@ -513,9 +516,12 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
       }
       
       // Add file content if provided
-      if (fileContent) {
-        promptParts.push('FILE CONTENT:');
-        promptParts.push(fileContent);
+      if (fileInfo && (fileInfo.withLineNumbers || fileInfo.content)) {
+        const content = fileInfo.withLineNumbers || fileInfo.content || '';
+        const start = fileInfo.start || 1;
+        const end = fileInfo.end || (content ? content.split('\n').length : 1);
+        promptParts.push(`FILE CONTENT (lines ${start}-${end}):`);
+        promptParts.push(content);
         promptParts.push('');
       }
       
@@ -526,16 +532,18 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
       promptParts.push('3. FIX: Propose a concrete solution to fix the error.');
       
       const prompt = promptParts.join('\n');
-      console.log(chalk.blue('Prompt for analyzeWithLLM:'), prompt); // Log prompt for analyzeWithLLM
+      // console.log(chalk.blue('Prompt for analyzeWithLLM:'), prompt); // Log prompt for analyzeWithLLM
       
-      const response = await client.query(prompt, {
+      const llmResponse = await client.query(prompt, {
         temperature: 0.3,
-        max_tokens: 512
+        max_tokens: 256
       });
       
       stopThinking();
-      console.log(chalk.blue('Response from analyzeWithLLM client.query:'), JSON.stringify(response, null, 2)); // Log response
-      return response.response.trim();
+      // console.log(chalk.blue('Response from analyzeWithLLM client.query:'), JSON.stringify(llmResponse, null, 2)); // Log response
+      analysis = llmResponse.response.trim();
+      reasoning = llmResponse.reasoning ? llmResponse.reasoning.trim() : '';
+      return { analysis, reasoning };
     }
     
     // Handle missing Ollama or model by ensuring it's there
@@ -580,9 +588,12 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
     }
     
     // Add file content if provided
-    if (fileContent) {
-      promptParts.push('FILE CONTENT (First ~200 lines with line numbers):');
-      promptParts.push(fileContent);
+    if (fileInfo && (fileInfo.withLineNumbers || fileInfo.content)) {
+      const content = fileInfo.withLineNumbers || fileInfo.content || '';
+      const start = fileInfo.start || 1;
+      const end = fileInfo.end || (content ? content.split('\n').length : 1);
+      promptParts.push(`FILE CONTENT (lines ${start}-${end}):`);
+      promptParts.push(content);
       promptParts.push('');
     }
     
@@ -609,12 +620,12 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileCon
     
     // Stop thinking spinner before returning
     stopThinking();
-    
-    return output.trim();
+    analysis = output.trim();
+    return { analysis, reasoning: '' }; // reasoning is empty for non-frontier
   } catch (error) {
     // Make sure we stop the spinner even if there's an error
     stopThinking();
-    return `Error during analysis: ${error.message}`;
+    return { analysis: `Error during analysis: ${error.message}`, reasoning: '' };
   }
 }
 
@@ -766,6 +777,8 @@ Output ONLY ONE of these exact phrases. No need for long explanations. Just a si
 export async function generateTerminalCommandFix(prevCommands, analysis, model) {
   // Start thinking spinner to provide visual feedback
   const stopThinking = startThinking(getThinkingPhrasesForAnalysis());
+  let command = '';
+  let reasoning = '';
   
   try {
     if (FrontierClient.isFrontierModel(model)) {
@@ -796,13 +809,14 @@ Generate ONLY the command, nothing else. No explanations, no markdown, just the 
 Make sure it's valid syntax that can be directly executed in a terminal.
 `.trim();
       
-      const response = await client.query(prompt, {
+      const llmResponse = await client.query(prompt, {
         temperature: 0.1,
         max_tokens: 256
       });
       
       // Clean the output to get just the command
-      let command = response.response.trim();
+      command = llmResponse.response.trim();
+      reasoning = llmResponse.reasoning ? llmResponse.reasoning.trim() : '';
       
       // Remove markdown code blocks if present
       command = command.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '');
@@ -814,14 +828,42 @@ Make sure it's valid syntax that can be directly executed in a terminal.
       command = command.replace(/^\$\s*/, '');
       
       stopThinking();
-      return command;
+      return { command, reasoning };
     }
     
-    // Original Ollama logic
-    // ... existing code for Ollama models ...
+    // Original Ollama logic for non-frontier models
+    const promptOllama = `
+You are a terminal command fixing AI. Given an analysis, extract a new command to fix it.
+
+Error Analysis:
+${analysis}
+
+Previous Commands:
+${Array.isArray(prevCommands) && prevCommands.length > 0 ? prevCommands.map(cmd => `- ${cmd}`).join('\n') : '(none)'}
+
+Instructions:
+1. Analyze the Proposed Fix section carefully
+2. Extract a single command that will fix the issue
+3. The command should be complete and ready to run
+4. Do not include any explanations, commentary, or markdown formatting
+5. Only output the command itself
+
+Generate ONLY the command, nothing else. No explanations, no markdown, just the raw command.
+Make sure it's valid syntax that can be directly executed in a terminal.
+`.trim();
+
+    command = await runLLMWithTempScript(promptOllama, model, 'error_analysis'); // Assuming 'error_analysis' preset is okay
+    stopThinking();
+    
+    // Clean the output for Ollama as well
+    command = command.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '');
+    command = command.replace(/^(Run|Execute|Type|Use|Try):\s*/i, '');
+    command = command.replace(/^\$\s*/, '');
+
+    return { command, reasoning: '' }; // Ollama path doesn't have reasoning from FrontierClient
   } catch (error) {
     stopThinking();
-    return `echo "Error generating command: ${error.message}"`;
+    return { command: `echo "Error generating command: ${error.message}"`, reasoning: '' };
   }
 }
 
@@ -837,9 +879,11 @@ Make sure it's valid syntax that can be directly executed in a terminal.
  * @param {string} [codeSummary=''] - Optional code summary for additional context.
  * @returns {Promise<string>} - The generated diff.
  */
-export async function generatePatch(errorOutput, prevPatches, analysis, currentDir = process.cwd(), model, fileContent = '', codeSummary = '') {
+export async function generatePatch(errorOutput, prevPatches, analysis, currentDir = process.cwd(), model, fileInfo = {}, codeSummary = '') {
   // Start thinking spinner to provide visual feedback
   const stopThinking = startThinking(getThinkingPhrasesForPatch());
+  let diff = '';
+  let reasoning = '';
   
   try {
     // Extract common context information
@@ -871,20 +915,37 @@ export async function generatePatch(errorOutput, prevPatches, analysis, currentD
         const apiKey = await askInput('API Key: ');
         if (!apiKey) {
           console.log(chalk.yellow('API key is required for frontier models.'));
-          return '';
+          return { diff: '', reasoning: '' };
         }
         
         const stored = await KeyManager.storeKey(model, apiKey);
         if (!stored) {
           console.log(chalk.red('Failed to store API key securely.'));
-          return '';
+          return { diff: '', reasoning: '' };
         }
       }
 
       const client = new FrontierClient(model);
       
+      // Format file content info for the prompt
+      const fileContentInfo = fileInfo && fileInfo.content 
+        ? `File Content (lines ${fileInfo.start || 1}-${fileInfo.end || (fileInfo.content ? fileInfo.content.split('\n').length : 1)}):\n${fileInfo.content}\n` 
+        : '';
+      
+      // Request JSON-structured patch instead of raw diff
       const prompt = `
-You are a code-fixing AI. Given an analysis, extract a structured patch to fix it.
+Analyze the error and generate a structured patch in JSON format with the following schema:
+{
+  "changes": [
+    {
+      "file_path": "relative/path/to/file.py",
+      "line_number": 42,
+      "old_line": "    z = x + yy",
+      "new_line": "    z = x + y"
+    },
+    ...
+  ]
+}
 
 Error Analysis:
 ${analysis}
@@ -893,7 +954,7 @@ Current Working Directory:
 ${currentDir}
 
 ${codeSummary ? `Code Summary:\n${codeSummary}\n` : ''}
-${fileContent ? `File Content:\n${fileContent}\n` : ''}
+${fileContentInfo}
 
 Error File:
 ${errorFiles || '(none)'}
@@ -911,25 +972,65 @@ Previous Patches:
 ${prevPatchesText || '(none)'}
 
 Instructions:
-Generate a unified diff patch that fixes the error. The patch should:
-1. Use standard unified diff format (---, +++, @@)
-2. Include file paths relative to: ${currentDir}
-3. Show context lines around changes
-4. Be minimal and focused on the error
-5. Follow the exact format of unified diff
+1. Ensure the file_path is relative to: ${currentDir}
+2. Include the ENTIRE line for both old_line and new_line
+3. For deletions, include old_line but set new_line to null
+4. For additions, set line_number of the line that comes before and set old_line to ""
+5. The line_number should correspond to the line number in the original file
 
-Output ONLY the diff patch, no explanations or commentary.
+IMPORTANT: PRESERVE EXACT INDENTATION
+- Python code relies on proper indentation for correct execution
+- Do not change indentation levels unless that's specifically part of the fix
+- Each space and tab matters in the generated patch
+- Copy the exact whitespace from the beginning of each line
+- Ensure that relative indentation between lines remains consistent
+
+Make sure to:
+1. Only include lines that are actually changed
+2. Use the correct line numbers from the error traceback (line ${errorLines || '?'})
+3. Keep the changes as minimal as possible
+4. Return ONLY valid JSON with no explanations or extra text
+
+Return ONLY the JSON object with no additional text or code blocks.
 `.trim();
-      console.log(chalk.magenta('Prompt for generatePatch:'), prompt); // Log prompt for generatePatch
       
-      const response = await client.query(prompt, {
+      const llmResponse = await client.query(prompt, {
         temperature: 0.1,
-        max_tokens: 768
+        max_tokens: 384
       });
       
       stopThinking();
-      console.log(chalk.magenta('Response from generatePatch client.query:'), JSON.stringify(response, null, 2)); // Log response
-      return response.response.trim();
+      
+      // Extract the reasoning from the response
+      reasoning = llmResponse.reasoning ? llmResponse.reasoning.trim() : '';
+      
+      // Process the response - extract a valid JSON string
+      let patchDataText = llmResponse.response.trim();
+      
+      // Remove any markdown code formatting if present
+      patchDataText = patchDataText.replace(/^```json\s+/m, '').replace(/\s*```$/m, '');
+      
+      try {
+        // Parse the JSON response
+        const patchData = JSON.parse(patchDataText);
+        
+        // Ensure the parsed object has the expected structure
+        if (!patchData.changes || !Array.isArray(patchData.changes)) {
+          console.log(chalk.yellow('Invalid patch format from model, changes array missing'));
+          return { diff: '', reasoning };
+        }
+        
+        // Convert the structured JSON to a unified diff
+        diff = convertToUnifiedDiff(patchData, currentDir);
+        return { diff, reasoning };
+      } catch (error) {
+        console.log(chalk.yellow(`Error parsing JSON patch: ${error.message}`));
+        console.log(chalk.gray('Raw response:', patchDataText));
+        
+        // If JSON parsing failed, return the raw text as fallback
+        // It might be a directly formatted diff
+        return { diff: patchDataText, reasoning };
+      }
     } else {
       // Ollama structured output approach
       const parts = [
@@ -954,9 +1055,9 @@ Output ONLY the diff patch, no explanations or commentary.
       }
       
       // Add file content if provided
-      if (fileContent) {
+      if (fileInfo && fileInfo.content) {
         parts.push('### File Content (First ~200 lines)');
-        parts.push(fileContent);
+        parts.push(fileInfo.content);
         parts.push('');
       }
       
@@ -1077,18 +1178,22 @@ Output ONLY the diff patch, no explanations or commentary.
         // Convert the structured patch to unified diff format
         const output = convertToUnifiedDiff(structuredPatch, currentDir);
         stopThinking();
-        return output.trim();
+        diff = output.trim();
+        reasoning = '';
+        return { diff, reasoning };
       } catch (error) {
         // Fall back to the traditional approach if structured outputs fail
         console.log(chalk.yellow(`Structured format unavailable - reverting to standard text output: ${error.message}`));
         const output = await runLLMWithTempScript(prompt, model, 'patch_generation');
         stopThinking();
-        return output.trim();
+        diff = output.trim();
+        reasoning = '';
+        return { diff, reasoning };
       }
     }
   } catch (error) {
     stopThinking();
     console.error(chalk.red(`Error generating patch: ${error.message}`));
-    return '';
+    return { diff: '', reasoning: '' };
   }
 } 

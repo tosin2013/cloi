@@ -151,15 +151,15 @@ export class FrontierClient {
    */
   prepareRequestBody(prompt, options) {
     const baseOptions = {
-      temperature: options.temperature || 0.7,
-      max_output_tokens: Math.min(options.max_tokens || 2048, this.config.maxTokens),
+      max_output_tokens: Math.min(options.max_tokens || 512, this.config.maxTokens),
       top_p: 1,
       store: true
     };
 
     switch (this.config.provider) {
       case 'openai':
-        return {
+        // Base request structure for all OpenAI models
+        const requestBody = {
           model: this.config.modelId,
           input: [{ content: prompt, role: "user" }],
           text: {
@@ -167,13 +167,32 @@ export class FrontierClient {
               type: "text"
             }
           },
-          reasoning: {},
           tools: [],
-          temperature: options.temperature || 1,
-          max_output_tokens: Math.min(options.max_tokens || 2048, this.config.maxTokens),
+          max_output_tokens: Math.min(options.max_tokens || 512, this.config.maxTokens),
           top_p: 1,
           store: true
         };
+
+        // Handle model-specific parameters:
+        const isReasoningModel = this.config.modelId.startsWith('o3-');
+        
+        // For reasoning models (o3 family)
+        if (isReasoningModel) {
+          // Add reasoning.effort parameter for o3 models
+          requestBody.reasoning = {
+            effort: "low" // Use low to conserve tokens
+          };
+        } 
+        // For standard models (gpt-4.1, etc.)
+        else {
+          // Empty reasoning object for non-o3 models
+          requestBody.reasoning = {};
+          
+          // Temperature parameter is supported for standard models
+          requestBody.temperature = options.temperature || 1;
+        }
+
+        return requestBody;
       case 'anthropic':
         return {
           model: this.config.modelId,
@@ -194,48 +213,69 @@ export class FrontierClient {
    */
   normalizeResponse(data) {
     console.log(chalk.blue('Normalizing response from provider:'), this.config.provider, JSON.stringify(data, null, 2));
+    let mainResponseText = '';
+    let reasoningText = '';
+    let usageData = data.usage || {};
+
     switch (this.config.provider) {
       case 'openai':
-        // Check if this is from the /responses API (has an 'output' array)
-        if (data.output && Array.isArray(data.output) && data.output.length > 0 &&
-            data.output[0].content && Array.isArray(data.output[0].content) && data.output[0].content.length > 0 &&
-            data.output[0].content[0].type === 'output_text' && typeof data.output[0].content[0].text === 'string') {
-          return {
-            response: data.output[0].content[0].text,
-            usage: data.usage || {}
-          };
+        // Check if the response was incomplete due to token limits
+        if (data.status === "incomplete" && data.incomplete_details) {
+          console.log(chalk.yellow(`Response incomplete: ${data.incomplete_details.reason}. Try reducing max_tokens.`));
         }
-        // Fallback for older completions API format (just in case, though /responses is primary for frontier)
-        if (data.choices && Array.isArray(data.choices) && data.choices.length > 0 &&
+      
+        // For the /responses API
+        if (data.output && Array.isArray(data.output)) {
+          const messageOutput = data.output.find(out => out.type === 'message');
+          if (messageOutput && messageOutput.content && Array.isArray(messageOutput.content) && messageOutput.content.length > 0 &&
+              messageOutput.content[0].type === 'output_text' && typeof messageOutput.content[0].text === 'string') {
+            mainResponseText = messageOutput.content[0].text;
+          } else if (data.status === "incomplete") {
+            // Create a helpful error message for incomplete responses
+            mainResponseText = `Error: Response incomplete due to token limit. The model started generating a response but hit the token limit before finishing.`;
+          }
+
+          const reasoningOutput = data.output.find(out => out.type === 'reasoning');
+          if (reasoningOutput && reasoningOutput.summary && Array.isArray(reasoningOutput.summary)) {
+            reasoningText = reasoningOutput.summary
+              .filter(step => step.type === 'text_step' && typeof step.text === 'string')
+              .map(step => step.text)
+              .join('\n');
+          }
+        } else if (data.choices && Array.isArray(data.choices) && data.choices.length > 0 && // Fallback for older /chat/completions
             data.choices[0].message && typeof data.choices[0].message.content === 'string') {
-          return {
-            response: data.choices[0].message.content,
-            usage: data.usage || {}
-          };
+          mainResponseText = data.choices[0].message.content;
         }
-        // If neither known structure matches, return empty with usage
-        console.log(chalk.yellow('OpenAI response structure not recognized for text extraction, returning empty response.'));
+        
+        if (!mainResponseText && !reasoningText) {
+           console.log(chalk.yellow('OpenAI response structure not recognized for text extraction, returning empty response. Input data:'), JSON.stringify(data, null, 2));
+        }
+        
         return {
-          response: '',
-          usage: data.usage || {}
+          response: mainResponseText,
+          reasoning: reasoningText,
+          usage: usageData
         };
+
       case 'anthropic':
         // Ensure Anthropic structure is also safely accessed
         if (data.content && Array.isArray(data.content) && data.content.length > 0 &&
             typeof data.content[0].text === 'string') {
-          return {
-            response: data.content[0].text,
-            usage: {
-              prompt_tokens: data.usage?.input_tokens,
-              completion_tokens: data.usage?.output_tokens,
-              total_tokens: data.usage?.total_tokens
-            }
-          };
+          mainResponseText = data.content[0].text;
         }
-        console.log(chalk.yellow('Anthropic response structure not recognized for text extraction, returning empty response.'));
+        // Anthropic doesn't typically provide separate reasoning in this structure via cloi's current setup.
+        // If it did, similar extraction logic would go here.
+        if (!mainResponseText) {
+            console.log(chalk.yellow('Anthropic response structure not recognized for text extraction, returning empty response. Input data:'), JSON.stringify(data, null, 2));
+        }
         return {
-          response: '',
-          usage: data.usage || {}
+          response: mainResponseText,
+          reasoning: '', // No separate reasoning field from Anthropic in current parsing
+          usage: {
+            prompt_tokens: data.usage?.input_tokens,
+            completion_tokens: data.usage?.output_tokens,
+            total_tokens: data.usage?.total_tokens
+          }
         };
       default:
         throw new Error(`Unknown provider: ${this.config.provider}`);

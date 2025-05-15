@@ -163,6 +163,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     let fileContentWithLineNumbers = '';
     let codeSummary = '';
     let filePath = '';
+    // Initialize fileInfo with default values
+    let fileInfo = null;
     
     // First, run the command to see the error
     let cmd = initialCmd;
@@ -221,12 +223,22 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         echoCommand(sedCmd);
         
         // Use readFileContext to get the first 200 lines (using line 100 as center with ctx=100)
-        fileContentRaw = readFileContext(filePath, 100, 100);
+        const fileContentInfo = readFileContext(filePath, 100, 100);
+        fileContentRaw = fileContentInfo.content;
         
         // Create a version with line numbers for analysis
         fileContentWithLineNumbers = fileContentRaw.split('\n')
-          .map((line, index) => `${index + 1}: ${line}`)
+          .map((line, index) => `${fileContentInfo.start + index}: ${line}`)
           .join('\n');
+        
+        // Create file info object with content and line range
+        fileInfo = {
+          content: fileContentRaw,
+          withLineNumbers: fileContentWithLineNumbers,
+          start: fileContentInfo.start,
+          end: fileContentInfo.end,
+          path: filePath
+        };
         
         // Summarize the content - use the version with line numbers for better context
         codeSummary = await summarizeCodeWithLLM(fileContentWithLineNumbers, currentModel);
@@ -245,7 +257,24 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     /* eslint-disable no-await-in-loop */
     while (true) {
       // First, run analysis like /analyze would do, but pass additional context
-      const analysis = await analyzeWithLLM(output, currentModel, fileContentWithLineNumbers, codeSummary, filePath);
+      const { analysis, reasoning: analysisReasoning } = await analyzeWithLLM(
+        output, 
+        currentModel, 
+        fileInfo || { 
+          content: fileContentRaw, 
+          withLineNumbers: fileContentWithLineNumbers, 
+          start: 1, 
+          end: fileContentRaw.split('\n').length, 
+          path: filePath 
+        },
+        codeSummary, 
+        filePath
+      );
+      
+      // Display reasoning if available
+      if (analysisReasoning) {
+        console.log(boxen(analysisReasoning, { ...BOX.OUTPUT_DARK, title: 'Reasoning' }));
+      }
       // Display analysis as indented gray text instead of boxen
       console.log('\n' +'  ' + chalk.gray(analysis.replace(/\n/g, '\n  ')) + '\n');
       
@@ -257,8 +286,12 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       if (errorType === "TERMINAL_COMMAND_ERROR") {
         // Generate a new command to fix the issue
         const prevCommands = iterations.map(i => i.patch).filter(Boolean);
-        const newCommand = await generateTerminalCommandFix(prevCommands, analysis, currentModel);
+        const { command: newCommand, reasoning: cmdReasoning } = await generateTerminalCommandFix(prevCommands, analysis, currentModel);
         
+        // Display command reasoning if available
+        if (cmdReasoning) {
+          console.log(boxen(cmdReasoning, { ...BOX.OUTPUT_DARK, title: 'Command Reasoning' }));
+        }
         // Show the proposed command
         console.log(boxen(newCommand, { ...BOX.OUTPUT, title: 'Proposed Command' }));
         
@@ -273,15 +306,26 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         iterations.push({ error: output, patch: newCommand, analysis: analysis });
       } else {
         // Original code file patching logic
-        const rawDiff = await generatePatch(
+        const { diff: rawDiff, reasoning: patchReasoning } = await generatePatch(
           output,
           iterations.map(i => i.patch),
           analysis,
           currentDir.trim(),
           currentModel,
-          fileContentRaw,
+          fileInfo || { 
+            content: fileContentRaw, 
+            withLineNumbers: fileContentWithLineNumbers, 
+            start: 1, 
+            end: fileContentRaw ? fileContentRaw.split('\n').length : 0, 
+            path: filePath 
+          },
           codeSummary
         );
+        
+        // Display patch reasoning if available
+        if (patchReasoning) {
+          console.log(boxen(patchReasoning, { ...BOX.OUTPUT_DARK, title: 'Patch Reasoning' }));
+        }
                 
         // Just extract the diff without displaying it
         const cleanDiff = extractDiff(rawDiff);

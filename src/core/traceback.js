@@ -97,9 +97,9 @@ export function readFileContext(file, line, ctx = 30) {
   const cmd   = `sed -n '${start},${end}p' ${file}`; // sed is faster than cat
 
   const { ok, output } = runCommand(cmd, 5_000);
-  if (!ok) return `Error reading ${file}: ${output.trim()}`;
+  if (!ok) return { content: `Error reading ${file}: ${output.trim()}`, start: 0, end: 0 };
 
-  return output;
+  return { content: output, start, end };
 }
 
 /* ───────────────────────────── Build Error Context ────────────────────────── */
@@ -120,7 +120,8 @@ export function buildErrorContext(log, contextSize = 30, includeHeaders = true) 
     if (includeHeaders) {
       ctx.push(`\n--- ${file} (line ${line}) ---`);
     }
-    ctx.push(readFileContext(file, line, contextSize));
+    const fileContext = readFileContext(file, line, contextSize);
+    ctx.push(fileContext.content);
   }
   
   return ctx.join('\n');
@@ -140,6 +141,7 @@ export function showSnippet(file, line, ctx = 30) {
   console.log(chalk.gray(`  Retrieving file context ${basename(file)}...`));
   echoCommand(cmd);
   const { ok, output } = runCommand(cmd, 5000);
+  // Not using readFileContext here as we want to run the command directly for output display
 }
 
 /* ───────────────────────────── Display Error Snippets ────────────────────────── */
