@@ -1,9 +1,11 @@
 import { KeyManager } from './keyManager.js';
 import { getApiEndpoint, getModelConfig } from './modelConfig.js';
 import boxen from 'boxen';
-import { askInput } from '../ui/prompt.js';
-import { BOX } from '../ui/boxen.js';
+import { askInput } from '../ui/terminalUI.js';
+import { BOX } from '../ui/terminalUI.js';
 import chalk from 'chalk';
+import fs from 'fs';
+import { dirname, join } from 'path';
 
 /**
  * Client for interacting with frontier models (GPT-4.1, O3)

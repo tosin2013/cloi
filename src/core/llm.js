@@ -9,22 +9,21 @@
  */
 
 import { execSync, spawn } from 'child_process';
-import { makePicker } from '../ui/prompt.js';
-import { askYesNo, closeReadline, getReadline } from '../ui/prompt.js';
-import { checkNetwork } from './command.js';
+import { makePicker, askYesNo, closeReadline, getReadline, askInput } from '../ui/terminalUI.js';
+import { checkNetwork } from '../utils/command.js';
 import chalk from 'chalk';
-import { buildErrorContext, extractFilesFromTraceback, getErrorLines } from './traceback.js';
-import { BOX } from '../ui/boxen.js';
+import { buildErrorContext, extractFilesFromTraceback, getErrorLines } from '../utils/traceback.js';
+import { BOX } from '../ui/terminalUI.js';
 import boxen from 'boxen';
 import ollama from 'ollama'
 import { runLLMWithTempScript } from '../utils/tempscript.js';
 import { promises as fs } from 'fs';
 
 import { cpus } from 'os';
-import { convertToUnifiedDiff, extractDiff } from './patch.js';
+import { convertToUnifiedDiff, extractDiff } from '../utils/patch.js';
 import { FrontierClient } from '../utils/frontierClient.js';
 import { KeyManager } from '../utils/keyManager.js';
-import { askInput } from '../ui/prompt.js';
+import { getApiEndpoint, getModelConfig } from '../utils/modelConfig.js';
 
 /* ───────────────────────── Available Models Provider ────────────────────────────── */
 /**
@@ -36,13 +35,10 @@ export function getAvailableModels() {
     'llama3.1:8b',
     'gemma3:4b',
     'gemma3:12b',
-    'gemma3:27b',
     'qwen3:8b',
     'qwen3:14b',
-    'qwen3:30b',
     'phi4:14b',
-    'phi4-reasoning:plus',
-    'phi4-reasoning:14b'
+    'phi4-reasoning:plus'
   ];
 
   const frontierModels = [

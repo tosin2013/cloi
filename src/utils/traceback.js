@@ -10,10 +10,12 @@
 import { existsSync } from 'fs';
 import { runCommand } from './command.js'; // Updated import path
 import boxen from 'boxen';
-import { BOX } from '../ui/boxen.js';
+import { BOX } from '../ui/terminalUI.js';
 import { basename } from 'path';
-import { echoCommand, truncateOutput} from '../ui/boxen.js';
+import { echoCommand, truncateOutput} from '../ui/terminalUI.js';
 import chalk from 'chalk';
+import fs from 'fs';
+import path from 'path';
 
 /* ───────────────────────────── User File Check ────────────────────────── */
 /**

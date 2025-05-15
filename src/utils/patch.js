@@ -8,11 +8,14 @@
  */
 
 import { execSync, spawnSync } from 'child_process';
-import { askYesNo } from '../ui/prompt.js';
+import { askYesNo } from '../ui/terminalUI.js';
 import chalk from 'chalk';
 import boxen from 'boxen';
-import { BOX } from '../ui/boxen.js';
+import { BOX } from '../ui/terminalUI.js';
 import fs from 'fs/promises';
+import path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
 
 /* ───────────────────────── Directory Creation Helper ────────────────────────────── */

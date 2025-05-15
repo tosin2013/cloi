@@ -26,15 +26,14 @@ import { dirname } from 'path';
 import fs from 'fs';
 
 // Import from our modules
-import { BOX, echoCommand, truncateOutput, createCommandBox } from '../ui/boxen.js';
+import { BOX, echoCommand, truncateOutput, createCommandBox, askYesNo, getReadline, closeReadline } from '../ui/terminalUI.js';
 import { startThinking } from '../core/llm.js';
-import { askYesNo, getReadline, closeReadline} from '../ui/prompt.js';
-import { runCommand } from '../core/command.js';
+import { runCommand } from '../utils/command.js';
 import { readHistory, lastRealCommand, selectHistoryItem } from '../utils/history.js';
 import { analyzeWithLLM, determineErrorType, generateTerminalCommandFix, generatePatch, selectModelItem, installModel, summarizeCodeWithLLM, readModels, getAvailableModels } from '../core/llm.js';
-import { extractDiff, confirmAndApply } from '../core/patch.js';
+import { extractDiff, confirmAndApply } from '../utils/patch.js';
 import { ensureDir, writeDebugLog } from '../utils/file.js';
-import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../core/traceback.js';
+import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../utils/traceback.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);

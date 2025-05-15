@@ -1,21 +1,70 @@
 /**
- * Interactive Terminal Prompt Module
+ * UI Box Display and Interactive Prompt Module
  * 
- * Provides utilities for creating interactive terminal UI components for user input.
- * This module handles readline management, yes/no confirmations, and an interactive
- * item picker with keyboard navigation. These components enhance the terminal user 
- * experience by providing intuitive ways to interact with the application.
+ * Provides utilities for:
+ * 1. Creating consistent, styled terminal boxes for various UI elements
+ * 2. Interactive terminal UI components for user input
+ * 
+ * This module contains predefined box styles, helper functions for boxed content,
+ * readline management, yes/no confirmations, and an interactive item picker.
+ * It enhances the terminal UI by providing visually distinct areas and intuitive
+ * ways for users to interact with the application.
  */
 
-import readline from 'readline';
-import chalk from 'chalk';
 import boxen from 'boxen';
-import { BOX } from './boxen.js';
+import chalk from 'chalk';
+import readline from 'readline';
 
+/* ─────────────────────────────  Boxen Presets  ──────────────────────────── */
+export const BOX = {
+  WELCOME:  { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75 },
+  PROMPT:   { padding: 0.2, margin: 0.5, borderStyle: 'round', width: 75 },
+  OUTPUT:   { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Output' },
+  ERROR:    { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Error' },
+  ANALYSIS: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, borderColor: '#00AAFF', title: 'AI Error Analysis' }, 
+  CONFIRM:  { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, borderColor: 'yellow', title: 'Confirm' },
+  PICKER:   { padding: 0.2, margin: 0.5, borderStyle: 'round', width: 75 },   // generic picker box
+  OUTPUT_DARK: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Reasoning', borderColor: 'gray' }
+};
+
+/**
+ * Prints a shell command styled within a box for visual clarity.
+ * @param {string} cmd - The command string to display.
+ */
+export function echoCommand(cmd) {
+  console.log('');
+  console.log(`  ${chalk.blueBright.bold('$')} ${chalk.blueBright.bold(cmd)}`);
+  console.log('');
+}
+
+/**
+ * Creates a string for displaying a command with a $ prefix.
+ * @param {string} cmd - The command to display.
+ * @param {object} [options] - Additional options (kept for backward compatibility).
+ * @returns {string} - A formatted string containing the command.
+ */
+export function createCommandBox(cmd, options = {}) {
+  // Return just styled text, no boxen
+  return `  ${chalk.blueBright.bold('$')} ${chalk.blueBright.bold(cmd)}`;
+}
+
+/**
+ * Truncates a multi-line string to a maximum number of lines,
+ * showing the last few lines prefixed with an ellipsis if truncated.
+ * @param {string} output - The string to truncate.
+ * @param {number} [maxLines=2] - The maximum number of lines to keep.
+ * @returns {string} - The potentially truncated string.
+ */
+export function truncateOutput(output, maxLines = 2) {
+  const lines = output.trimEnd().split(/\r?\n/);
+  if (lines.length <= maxLines) return output;
+  return lines.slice(-maxLines).join('\n');
+}
+
+/* ─────────────────────────  Readline Management  ─────────────────────────── */
 /* Global readline instance */
 let rl = /** @type {readline.Interface|null} */ (null);
 
-/* ─────────────────────────  Readline Management  ─────────────────────────── */
 /**
  * Lazily creates and returns a singleton readline interface instance.
  * Ensures that only one interface is active at a time.
@@ -134,7 +183,7 @@ export function makePicker(items, title = 'Picker') {
   }
 
 /**
- * Prompts for input with optional masking for sensitive data
+ * Prompts for input (API Key) with optional masking for sensitive data
  * @param {string} prompt - The prompt to display
  * @param {boolean} [mask=false] - Whether to mask the input
  * @returns {Promise<string>} - The user's input
@@ -196,4 +245,4 @@ export async function askInput(prompt, mask = true) {
       });
     }
   });
-}
+} 
