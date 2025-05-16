@@ -228,7 +228,7 @@ export class FrontierClient {
       case 'openai':
         // Check if the response was incomplete due to token limits
         if (data.status === "incomplete" && data.incomplete_details) {
-          console.log(chalk.yellow(`Response incomplete: ${data.incomplete_details.reason}. Try reducing max_tokens.`));
+          console.log(chalk.yellow(`Response incomplete: ${data.incomplete_details.reason}. Response incomplete due to token limit.`));
         }
       
         // For the /responses API
