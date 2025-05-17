@@ -215,6 +215,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     let fileContentWithLineNumbers = '';
     let codeSummary = '';
     let filePath = '';
+    let isValidSourceFile = false; // Track if we have a valid source file
     // Initialize fileInfo with default values
     let fileInfo = null;
     
@@ -265,12 +266,21 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
   }
     
     // Extract possible file paths from the command or error logs
-  try {
+      try {
     // If we extracted error from logs and have file paths already, use those
     if (logError && logFiles && logFiles.size > 0) {
       // Use the first file from the logs
       filePath = Array.from(logFiles.keys())[0];
       console.log(chalk.gray(`  Using file from error logs: ${filePath}`));
+      
+              // Check if it's a valid file
+        isValidSourceFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+        
+        // If not a file, try as absolute path
+        if (!isValidSourceFile && filePath && !filePath.startsWith('/')) {
+        filePath = join(currentDir.trim(), filePath);
+        isValidSourceFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+      }
     } else {
       // Extract possible filename from commands like "python file.py", "node script.js", etc.
       let possibleFile = initialCmd;
@@ -292,53 +302,53 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       
       // First check relative path
       filePath = possibleFile;
-      let isFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+      isValidSourceFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
       
       // If not a file, try as absolute path
-      if (!isFile && filePath && !filePath.startsWith('/')) {
+      if (!isValidSourceFile && filePath && !filePath.startsWith('/')) {
         filePath = join(currentDir.trim(), filePath);
-        isFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+        isValidSourceFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
       }
     }
+    
+    // Check if we need additional context from the file
+    // We'll read file content only if:
+    // 1. It's a valid file AND
+    // 2. There are NO clear error lines in the traceback
+    const filesWithErrors = extractFilesFromTraceback(output);
+    const hasErrorLineInfo = filesWithErrors.size > 0;
+    
+    if (isValidSourceFile && !hasErrorLineInfo) {
+      console.log(chalk.gray(`  Analyzing file content...`));
+      // Show the sed command that will be used
+      const start = 1; // Since we want first 200 lines, starting from line 1
+      const end = 200; // Read first 200 lines
+      const sedCmd = `sed -n '${start},${end}p' ${filePath}`;
+      echoCommand(sedCmd);
       
-      // Check if we need additional context from the file
-      // We'll read file content only if:
-      // 1. It's a valid file AND
-      // 2. There are NO clear error lines in the traceback
-      const filesWithErrors = extractFilesFromTraceback(output);
-      const hasErrorLineInfo = filesWithErrors.size > 0;
+      // Use readFileContext to get the first 200 lines (using line 100 as center with ctx=100)
+      const fileContentInfo = readFileContext(filePath, 100, 100);
+      fileContentRaw = fileContentInfo.content;
       
-      if (isFile && !hasErrorLineInfo) {
-        console.log(chalk.gray(`  Analyzing file content...`));
-        // Show the sed command that will be used
-        const start = 1; // Since we want first 200 lines, starting from line 1
-        const end = 200; // Read first 200 lines
-        const sedCmd = `sed -n '${start},${end}p' ${filePath}`;
-        echoCommand(sedCmd);
-        
-        // Use readFileContext to get the first 200 lines (using line 100 as center with ctx=100)
-        const fileContentInfo = readFileContext(filePath, 100, 100);
-        fileContentRaw = fileContentInfo.content;
-        
-        // Create a version with line numbers for analysis
-        fileContentWithLineNumbers = fileContentRaw.split('\n')
-          .map((line, index) => `${fileContentInfo.start + index}: ${line}`)
-          .join('\n');
-        
-        // Create file info object with content and line range
-        fileInfo = {
-          content: fileContentRaw,
-          withLineNumbers: fileContentWithLineNumbers,
-          start: fileContentInfo.start,
-          end: fileContentInfo.end,
-          path: filePath
-        };
-        
-        // Summarize the content - use the version with line numbers for better context
-        codeSummary = await summarizeCodeWithLLM(fileContentWithLineNumbers, currentModel);
-        // Display summary as indented gray text instead of boxen
-        console.log('\n' +'  ' + chalk.gray(codeSummary) + '\n');
-      }
+      // Create a version with line numbers for analysis
+      fileContentWithLineNumbers = fileContentRaw.split('\n')
+        .map((line, index) => `${fileContentInfo.start + index}: ${line}`)
+        .join('\n');
+      
+      // Create file info object with content and line range
+      fileInfo = {
+        content: fileContentRaw,
+        withLineNumbers: fileContentWithLineNumbers,
+        start: fileContentInfo.start,
+        end: fileContentInfo.end,
+        path: filePath
+      };
+      
+      // Summarize the content - use the version with line numbers for better context
+      codeSummary = await summarizeCodeWithLLM(fileContentWithLineNumbers, currentModel);
+      // Display summary as indented gray text instead of boxen
+      console.log('\n' +'  ' + chalk.gray(codeSummary) + '\n');
+    }
     } catch (error) {
       console.log(chalk.yellow(`  Note: Could not analyze file content: ${error.message}`));
     }
