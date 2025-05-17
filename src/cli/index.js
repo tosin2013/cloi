@@ -41,10 +41,15 @@ import {
   installModelIfNeeded as installModel
 } from '../core/index.js';
 import { extractDiff, confirmAndApply } from '../utils/patch.js';
-import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../utils/traceback.js';
+import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback, buildErrorContext, getErrorLines } from '../utils/traceback.js';
 import { startThinking } from '../core/ui/thinking.js';
 import { FrontierClient } from '../core/executor/frontier.js';
 import { KeyManager } from '../utils/keyManager.js';
+// Import prompt builders for debugging
+import { buildAnalysisPrompt, buildSummaryPrompt } from '../core/promptTemplates/analyze.js';
+import { buildErrorTypePrompt } from '../core/promptTemplates/classify.js';
+import { buildCommandFixPrompt } from '../core/promptTemplates/command.js';
+import { buildPatchPrompt } from '../core/promptTemplates/patch.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
@@ -118,8 +123,8 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
           // Only applicable for zsh users
           if (!process.env.SHELL || !process.env.SHELL.includes('zsh')) {
             console.log(boxen(
-              `Terminal logging is only supported for zsh users.\nCurrent shell: ${process.env.SHELL || 'unknown'}`,
-              { ...BOX.OUTPUT, title: 'Not Supported' }
+              `Terminal logging is only supported for zsh shell.\nYour current shell is: ${process.env.SHELL || 'unknown'}\n\nCLOI will still work but without auto-logging capabilities.`,
+              { ...BOX.OUTPUT, title: 'Shell Not Supported' }
             ));
             break;
           }
@@ -169,10 +174,32 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
           ));
           break;
   
-        case '/exit':
-          closeReadline();
+        case '/exit': {
+          // Find all running event listeners and active handles
+          const activeHandles = process._getActiveHandles();
           console.log(chalk.blue('bye, for now...'));
-          return;
+          
+          // Close any open resources
+          closeReadline();
+          
+          // Force process exit with no delay
+          setImmediate(() => {
+            activeHandles.forEach(handle => {
+              // Try to close any type of handle that supports it
+              if (handle && typeof handle.close === 'function') {
+                try {
+                  handle.close();
+                } catch (e) {
+                  // Ignore errors during cleanup
+                }
+              }
+            });
+            
+            // Exit the process
+            process.exit(0);
+          });
+          break;
+        }
   
         case '':
           break;
@@ -221,7 +248,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     
     // First, try to extract recent errors from terminal logs
   let cmd = initialCmd;
-  console.log(chalk.gray('  Looking for recent errors in terminal logs...'));
+  console.log(chalk.gray('  Looking for recent errors in terminal logs...\n'));
   
   // Import and use the terminal log reader and logger
   const { readTerminalLogs, extractRecentError, isLikelyRuntimeError } = await import('../utils/terminalLogs.js');
@@ -239,23 +266,37 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
   
   // If we found a likely runtime error in logs
   if (logError && logFiles.size > 0) {
-    console.log(boxen(
-      chalk.yellow('Found error in terminal logs. Using this instead of re-running command.'), 
-      { ...BOX.PROMPT, title: 'Log Analysis' }
-    ));
+    console.log(chalk.gray(`  Detected error when running: ${initialCmd}\n`));
+    
+    
+    // // List all files that caused the error
+    // if (logFiles.size > 0) {
+    //   console.log(chalk.gray('Files with errors:'));
+    //   for (const file of logFiles.keys()) {
+    //     console.log(chalk.gray(`  - ${file}`));
+    //   }
+    // }
+    
+    // Show the last 5 lines of the traceback error
+    const errorLines = logError.split('\n');
+    const lastFiveLines = errorLines.slice(Math.max(0, errorLines.length - 10));
+    lastFiveLines.forEach(line => console.log(chalk.gray(`    ${line}`)));
+    console.log(chalk.gray(`\n`));
+
+    
     output = logError;
     ok = false; // Mark as error since we found one
   } else {
     // If logging is not enabled and this is a zsh shell, suggest enabling it
     if (!loggingEnabled && process.env.SHELL?.includes('zsh')) {
       console.log(boxen(
-        chalk.gray('Tip: For better error detection, enable terminal logging using the /logging command.\nOnce enabled, ALL terminal commands will be automatically logged without any prefix.'),
+        chalk.gray('Tip: For better error detection, enable terminal logging using the /logging command.\nThis only works with zsh shell and requires a terminal restart to take effect.'),
         { ...BOX.OUTPUT_DARK, title: 'Suggestion' }
       ));
     }
     
     // Fall back to running the command if no clear error found in logs
-    console.log(chalk.gray('  No clear errors in logs. Running command instead...'));
+    console.log(chalk.gray('  Terminal logging is disabled. Running command instead...'));
     echoCommand(cmd);
     ({ ok, output } = runCommand(cmd));
   }
@@ -271,7 +312,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     if (logError && logFiles && logFiles.size > 0) {
       // Use the first file from the logs
       filePath = Array.from(logFiles.keys())[0];
-      console.log(chalk.gray(`  Using file from error logs: ${filePath}`));
+
       
               // Check if it's a valid file
         isValidSourceFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
@@ -312,43 +353,45 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     }
     
     // Check if we need additional context from the file
-    // We'll read file content only if:
-    // 1. It's a valid file AND
-    // 2. There are NO clear error lines in the traceback
-    const filesWithErrors = extractFilesFromTraceback(output);
-    const hasErrorLineInfo = filesWithErrors.size > 0;
-    
-    if (isValidSourceFile && !hasErrorLineInfo) {
-      console.log(chalk.gray(`  Analyzing file content...`));
-      // Show the sed command that will be used
-      const start = 1; // Since we want first 200 lines, starting from line 1
-      const end = 200; // Read first 200 lines
-      const sedCmd = `sed -n '${start},${end}p' ${filePath}`;
-      echoCommand(sedCmd);
+          // We'll read file content only if:
+      // 1. It's a valid file AND
+      // 2. There are NO clear error lines in the traceback
+      const filesWithErrors = extractFilesFromTraceback(output);
+      const hasErrorLineInfo = filesWithErrors.size > 0;
       
-      // Use readFileContext to get the first 200 lines (using line 100 as center with ctx=100)
-      const fileContentInfo = readFileContext(filePath, 100, 100);
-      fileContentRaw = fileContentInfo.content;
-      
-      // Create a version with line numbers for analysis
-      fileContentWithLineNumbers = fileContentRaw.split('\n')
-        .map((line, index) => `${fileContentInfo.start + index}: ${line}`)
-        .join('\n');
-      
-      // Create file info object with content and line range
-      fileInfo = {
-        content: fileContentRaw,
-        withLineNumbers: fileContentWithLineNumbers,
-        start: fileContentInfo.start,
-        end: fileContentInfo.end,
-        path: filePath
-      };
-      
-      // Summarize the content - use the version with line numbers for better context
-      codeSummary = await summarizeCodeWithLLM(fileContentWithLineNumbers, currentModel);
-      // Display summary as indented gray text instead of boxen
-      console.log('\n' +'  ' + chalk.gray(codeSummary) + '\n');
-    }
+      if (isValidSourceFile && !hasErrorLineInfo) {
+        console.log(chalk.gray(`  Analyzing file content...`));
+        // Show the sed command that will be used
+        const start = 1; // Since we want first 200 lines, starting from line 1
+        const end = 200; // Read first 200 lines
+        const sedCmd = `sed -n '${start},${end}p' ${filePath}`;
+        echoCommand(sedCmd);
+        
+        // Use readFileContext to get the first 200 lines (using line 100 as center with ctx=100)
+        const fileContentInfo = readFileContext(filePath, 100, 100);
+        fileContentRaw = fileContentInfo.content;
+        
+        // Create a version with line numbers for analysis
+        fileContentWithLineNumbers = fileContentRaw.split('\n')
+          .map((line, index) => `${fileContentInfo.start + index}: ${line}`)
+          .join('\n');
+        
+        // Create file info object with content and line range
+        fileInfo = {
+          content: fileContentRaw,
+          withLineNumbers: fileContentWithLineNumbers,
+          start: fileContentInfo.start,
+          end: fileContentInfo.end,
+          path: filePath
+        };
+        
+        // Summarize code without displaying the prompt
+        
+        // Summarize the content - use the version with line numbers for better context
+        codeSummary = await summarizeCodeWithLLM(fileContentWithLineNumbers, currentModel);
+        // Display summary as indented gray text instead of boxen
+        console.log('\n' +'  ' + chalk.gray(codeSummary) + '\n');
+      }
     } catch (error) {
       console.log(chalk.yellow(`  Note: Could not analyze file content: ${error.message}`));
     }
@@ -361,6 +404,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     /* eslint-disable no-await-in-loop */
     while (true) {
       // First, run analysis like /analyze would do, but pass additional context
+      // Build the analysis prompt but don't display it
+      
       const { analysis, reasoning: analysisReasoning } = await analyzeWithLLM(
         output, 
         currentModel, 
@@ -383,6 +428,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       console.log('\n' +'  ' + chalk.gray(analysis.replace(/\n/g, '\n  ')) + '\n');
       
       // Determine if this is a terminal command issue using LLM
+      // Determine error type without displaying the prompt
+      
       const errorType = await determineErrorType(output, analysis, currentModel);
       // Display error type as indented gray text
       console.log('  ' + chalk.gray(errorType) + '\n');
@@ -390,6 +437,9 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       if (errorType === "TERMINAL_COMMAND_ERROR") {
         // Generate a new command to fix the issue
         const prevCommands = iterations.map(i => i.patch).filter(Boolean);
+        
+        // Generate command fix without displaying the prompt
+        
         const { command: newCommand, reasoning: cmdReasoning } = await generateTerminalCommandFix(prevCommands, analysis, currentModel);
         
         // Display command reasoning if available
@@ -410,9 +460,24 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         iterations.push({ error: output, patch: newCommand, analysis: analysis });
       } else {
         // Original code file patching logic
+        const prevPatches = iterations.map(i => i.patch);
+        
+        // Extract file paths and line numbers from the traceback
+        const filesWithErrors = extractFilesFromTraceback(output);
+        const errorFiles = Array.from(filesWithErrors.keys()).join('\n');
+        const errorLines = Array.from(filesWithErrors.values()).join('\n');
+        
+        // Get the exact lines of code where errors occur
+        const exactErrorCode = getErrorLines(output);
+        
+        // Get the code context with reduced context size (±3 lines)
+        const context = buildErrorContext(output, 3, false);
+        
+        // Generate patch without displaying the prompt
+        
         const { diff: rawDiff, reasoning: patchReasoning } = await generatePatch(
           output,
-          iterations.map(i => i.patch),
+          prevPatches,
           analysis,
           currentDir.trim(),
           currentModel,
@@ -555,7 +620,15 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       const { isLoggingEnabled, setupTerminalLogging } = await import('../utils/terminalLogger.js');
       // Only prompt if logging is not already enabled
       if (!(await isLoggingEnabled())) {
-        await setupTerminalLogging();
+        const setupResult = await setupTerminalLogging();
+        // If user gave permission to set up logging, exit and ask them to restart terminal
+        if (setupResult) {
+          console.log(boxen(
+            chalk.green('Please restart your terminal or run: source ~/.zshrc\n Run `cloi` when you encounter the next error.'),
+            { ...BOX.OUTPUT, title: 'Action Required' }
+          ));
+          process.exit(0);
+        }
       }
     }
   
