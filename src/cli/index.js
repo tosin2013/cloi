@@ -65,7 +65,7 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
   
     while (true) {
       console.log(boxen(
-        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
+        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/logging')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
         BOX.PROMPT
       ));
   
@@ -113,13 +113,55 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
           getReadline();
           break;
         }
-  
+        
+        case '/logging': {
+          // Only applicable for zsh users
+          if (!process.env.SHELL || !process.env.SHELL.includes('zsh')) {
+            console.log(boxen(
+              `Terminal logging is only supported for zsh users.\nCurrent shell: ${process.env.SHELL || 'unknown'}`,
+              { ...BOX.OUTPUT, title: 'Not Supported' }
+            ));
+            break;
+          }
+          
+          const { isLoggingEnabled, setupTerminalLogging, disableLogging } = await import('../utils/terminalLogger.js');
+          const loggingEnabled = await isLoggingEnabled();
+          
+          if (loggingEnabled) {
+            console.log(boxen(
+              `Terminal logging is currently enabled.\nDo you want to disable it?`,
+              { ...BOX.CONFIRM, title: 'Logging Status' }
+            ));
+            
+            const shouldDisable = await askYesNo('Disable terminal logging?');
+            if (shouldDisable) {
+              const success = await disableLogging();
+              if (success) {
+                console.log(boxen(
+                  `Terminal logging has been disabled.\nPlease restart your terminal or run 'source ~/.zshrc' for changes to take effect.`,
+                  { ...BOX.OUTPUT, title: 'Success' }
+                ));
+              } else {
+                console.log(chalk.red('Failed to disable terminal logging.'));
+              }
+            }
+          } else {
+            await setupTerminalLogging();
+          }
+          
+          // Reset terminal state and readline
+          closeReadline();
+          getReadline();
+          break;
+        }
+
         case '/help':
           console.log(boxen(
             [
               '/debug    – auto-patch errors using chosen LLM',
               '/model    – pick from installed Ollama models',
               '/history  – pick from recent shell commands',
+              '/logging  – enable/disable terminal output logging (zsh only)',
               '/help     – show this help',
               '/exit     – quit'
             ].join('\n'),
@@ -176,19 +218,60 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     // Initialize fileInfo with default values
     let fileInfo = null;
     
-    // First, run the command to see the error
-    let cmd = initialCmd;
-    console.log(chalk.gray('  Reading errors...'));
-    echoCommand(cmd);
-    const { ok, output } = runCommand(cmd);
-    
-    if (ok && !/error/i.test(output)) {
-      console.log(boxen(chalk.green('No errors detected.'), { ...BOX.OUTPUT, title: 'Success' }));
-      return;
+    // First, try to extract recent errors from terminal logs
+  let cmd = initialCmd;
+  console.log(chalk.gray('  Looking for recent errors in terminal logs...'));
+  
+  // Import and use the terminal log reader and logger
+  const { readTerminalLogs, extractRecentError, isLikelyRuntimeError } = await import('../utils/terminalLogs.js');
+  const { isLoggingEnabled } = await import('../utils/terminalLogger.js');
+  
+  // Check if terminal logging is enabled (for zsh users)
+  const loggingEnabled = process.env.SHELL?.includes('zsh') ? await isLoggingEnabled() : false;
+  
+  // Try to get error from logs first
+  const { error: logError, files: logFiles } = await extractRecentError();
+  
+  // Variables to store final error output
+  let ok = true;
+  let output = '';
+  
+  // If we found a likely runtime error in logs
+  if (logError && logFiles.size > 0) {
+    console.log(boxen(
+      chalk.yellow('Found error in terminal logs. Using this instead of re-running command.'), 
+      { ...BOX.PROMPT, title: 'Log Analysis' }
+    ));
+    output = logError;
+    ok = false; // Mark as error since we found one
+  } else {
+    // If logging is not enabled and this is a zsh shell, suggest enabling it
+    if (!loggingEnabled && process.env.SHELL?.includes('zsh')) {
+      console.log(boxen(
+        chalk.gray('Tip: For better error detection, enable terminal logging using the /logging command.\nOnce enabled, ALL terminal commands will be automatically logged without any prefix.'),
+        { ...BOX.OUTPUT_DARK, title: 'Suggestion' }
+      ));
     }
     
-    // Extract possible file paths from the command
-    try {
+    // Fall back to running the command if no clear error found in logs
+    console.log(chalk.gray('  No clear errors in logs. Running command instead...'));
+    echoCommand(cmd);
+    ({ ok, output } = runCommand(cmd));
+  }
+  
+  if (ok && !/error/i.test(output)) {
+    console.log(boxen(chalk.green('No errors detected.'), { ...BOX.OUTPUT, title: 'Success' }));
+    return;
+  }
+    
+    // Extract possible file paths from the command or error logs
+  try {
+    // If we extracted error from logs and have file paths already, use those
+    if (logError && logFiles && logFiles.size > 0) {
+      // Use the first file from the logs
+      filePath = Array.from(logFiles.keys())[0];
+      console.log(chalk.gray(`  Using file from error logs: ${filePath}`));
+    } else {
       // Extract possible filename from commands like "python file.py", "node script.js", etc.
       let possibleFile = initialCmd;
       
@@ -216,6 +299,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         filePath = join(currentDir.trim(), filePath);
         isFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
       }
+    }
       
       // Check if we need additional context from the file
       // We'll read file content only if:
@@ -394,9 +478,28 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         default: 'phi4:14b',
         type: 'string'
       })
+      .option('setup-logging', {
+        describe: 'Set up automatic terminal logging',
+        type: 'boolean'
+      })
       .help().alias('help', '?')
       .epilog('CLOI - Open source and completely local debugging agent.')
       .parse();
+    
+    // Check if user explicitly requested to set up terminal logging
+    if (argv.setupLogging) {
+      const { setupTerminalLogging } = await import('../utils/terminalLogger.js');
+      const setupResult = await setupTerminalLogging();
+      if (!setupResult) {
+        console.log(chalk.gray('Terminal logging setup was not completed.'));
+      } else {
+        console.log(boxen(
+          chalk.green('Terminal logging has been enabled.\nAfter restarting your terminal, ALL commands will be automatically logged without any prefix.'),
+          { ...BOX.OUTPUT, title: 'Success' }
+        ));
+      }
+      process.exit(0);
+    }
   
     // Check if the specified model is installed, install if not
     let currentModel = argv.model;
@@ -436,6 +539,15 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       `${banner}\n↳ model: ${currentModel}\n↳ completely local and secure`,
       BOX.WELCOME
     ));
+    
+    // Check if terminal logging should be set up (only for zsh users)
+    if (process.env.SHELL && process.env.SHELL.includes('zsh')) {
+      const { isLoggingEnabled, setupTerminalLogging } = await import('../utils/terminalLogger.js');
+      // Only prompt if logging is not already enabled
+      if (!(await isLoggingEnabled())) {
+        await setupTerminalLogging();
+      }
+    }
   
     const lastCmd = await lastRealCommand();
     if (!lastCmd) {

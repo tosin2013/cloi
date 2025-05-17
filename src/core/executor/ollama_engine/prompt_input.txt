@@ -1,0 +1,121 @@
+You are a helpful terminal assistant analysing command errors.
+
+ERROR OUTPUT:
+Successfully loaded data with 30 rows and 7 columns
+
+=== Basic Statistics ===
+       customer_id     amount        age
+count    30.000000   30.00000  30.000000
+mean   1005.900000   91.55700  33.533333
+std       4.729584   68.53589   6.072739
+min    1001.000000   15.50000  22.000000
+25%    1002.000000   43.18750  29.000000
+50%    1004.500000   71.52500  33.500000
+75%    1009.750000  127.43750  38.750000
+max    1016.000000  299.99000  45.000000
+
+=== Missing Values ===
+customer_id      0
+purchase_date    0
+amount           0
+category         0
+gender           0
+age              0
+location         0
+dtype: int64
+
+=== Customer Demographics ===
+Traceback (most recent call last):
+  File "/opt/anaconda3/lib/python3.12/site-packages/pandas/core/indexes/base.py", line 3805, in get_loc
+    return self._engine.get_loc(casted_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'SEX'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/gabrielcha/Desktop/cloi-cli-testing/test_directories/quick_test/customer_analysis.py", line 52, in <module>
+    main()
+  File "/Users/gabrielcha/Desktop/cloi-cli-testing/test_directories/quick_test/customer_analysis.py", line 48, in main
+    analyze_data(df)
+  File "/Users/gabrielcha/Desktop/cloi-cli-testing/test_directories/quick_test/customer_analysis.py", line 26, in analyze_data
+    print(f"Gender distribution:\n{df['SEX'].value_counts()}")
+                                   ~~^^^^^^^
+  File "/opt/anaconda3/lib/python3.12/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.12/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'SEX'
+
+
+FILE PATH:
+customer_analysis.py
+TRACEBACK CONTEXT (±30 lines):
+
+--- /Users/gabrielcha/Desktop/cloi-cli-testing/test_directories/quick_test/customer_analysis.py (line 26) ---
+import pandas as pd
+import matplotlib.pyplot as plt
+# TEST Q 1
+# import seaborn as sns
+
+def load_data():
+    try:
+        df = pd.read_csv('customer_purchases.csv')
+        print(f"Successfully loaded data with {df.shape[0]} rows and {df.shape[1]} columns")
+        return df
+    except FileNotFoundError:
+        print("Error: File not found. Please ensure 'customer_purchases.csv' exists in the current directory.")
+        return None
+
+def analyze_data(df):
+    if df is None:
+        return
+    
+    print("\n=== Basic Statistics ===")
+    print(df.describe())
+    
+    print("\n=== Missing Values ===")
+    print(df.isnull().sum())
+    
+    print("\n=== Customer Demographics ===")
+    print(f"Gender distribution:\n{df['SEX'].value_counts()}")
+    print(f"Age distribution:\n{df['age'].describe()}")
+    
+    # TEST Q 2
+    print("\n=== Purchase Analysis ===")
+    avg_purchase = df.groupby('customer_id')['amount'].mean()
+    print(f"Average purchase amount per customer:\n{avg_purchase}")
+    purchase_counts = df.groupby('customer_id').size().reset_index(name='purchase_count')
+    print(f"\nPurchase counts per customer:\n{purchase_counts.head()}")
+    
+def visualize_data(df):
+    plt.figure(figsize=(10, 6))
+    df.groupby('category')['amount'].sum().sort_values(ascending=False).plot(kind='bar')
+    plt.title('Total Sales by Product Category')
+    plt.ylabel('Total Amount ($)')
+    plt.xlabel('Category')
+    plt.tight_layout()
+    plt.savefig('sales_by_category.png')
+    
+def main():
+    df = load_data()
+    if df is not None:
+        analyze_data(df)
+        print("\nAnalysis complete!")
+
+if __name__ == "__main__":
+    main()
+
+
+Your response MUST include these sections:
+1. ERROR LOCATION: Specify the file name (example.py) and the exact line number (line 45) where you believe the error is occurring. Nothing else.
+2. Explain **VERY** concisely what went wrong.
+3. FIX: Propose a concrete solution to fix the error. There might be multiple fixes required for the same error, so put all in one code chunk. Do not move onto another error. No alternatives. Be final with your solution.
+
+Be precise about the error line number, even if it's not explicitly mentioned in the traceback.
+No to low explanation only and focused on the root cause and solution. Keep it **VERY** concise.
