@@ -65,24 +65,39 @@ export async function extractRecentError() {
     return { error: '', files: new Map() };
   }
   
-  // Split into "command blocks" by looking for shell prompts
-  const commandBlocks = logs.split(/\$\s+/).filter(Boolean);
+  // Split into "command blocks" using the consistent separator
+  // Each block starts with the separator and contains command info and output
+  const commandBlocks = logs.split("===================================================\n")
+    .filter(block => block.trim() !== "" && block.includes("COMMAND:"));
   
   // Look through recent command blocks for errors, starting from the most recent
   for (let i = commandBlocks.length - 1; i >= 0; i--) {
     const block = commandBlocks[i];
     
-    if (isLikelyRuntimeError(block)) {
-      // We found a likely error block, now extract file references
+    // Extract the part of the block that is the actual command output
+    const outputHeader = "OUTPUT BEGINS BELOW:\n---------------------------------------------------\n";
+    const outputStartIndex = block.indexOf(outputHeader);
+    
+    if (outputStartIndex !== -1) {
+      const outputContent = block.substring(outputStartIndex + outputHeader.length);
+      const outputEndMarker = "\n---------------------------------------------------\n"; // Before EXIT STATUS
+      const outputEndIndex = outputContent.indexOf(outputEndMarker);
+      const pureOutput = (outputEndIndex !== -1) ? 
+                        outputContent.substring(0, outputEndIndex) : 
+                        outputContent;
       
-      // Import the traceback analyzer
-      const { extractFilesFromTraceback } = await import('./traceback.js');
-      const files = extractFilesFromTraceback(block);
-      
-      return {
-        error: block,
-        files: files
-      };
+      if (isLikelyRuntimeError(pureOutput)) {
+        // We found a likely error block, now extract file references
+        
+        // Import the traceback analyzer
+        const { extractFilesFromTraceback } = await import('./traceback.js');
+        const files = extractFilesFromTraceback(pureOutput);
+        
+        return {
+          error: pureOutput, // Return just the command output part as the error
+          files: files
+        };
+      }
     }
   }
   
