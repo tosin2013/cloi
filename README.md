@@ -36,9 +36,38 @@ cloi
 /debug    - Auto-patch errors iteratively using LLM
 /model    - Pick Ollama model
 /history  - Pick from recent shell commands
+/logging  - Enable/disable terminal output logging (zsh only)
 /help     - Show this help
 /exit     - Quit
 ```
+
+### Terminal Logging
+
+Cloi provides automatic terminal output logging to help analyze runtime errors without re-running potentially harmful commands.
+
+**Features:**
+- Automatically logs ALL terminal commands and their complete output
+- You don't need to type any special prefix - everything is captured automatically
+- Logs are stored in `~/.cloi/terminal_output.log`
+- Captures detailed error messages and stack traces
+- Keeps log file under 1MB with automatic rotation
+- Only available for zsh users
+- Requires explicit permission
+- Can be enabled/disabled at any time
+
+**Usage:**
+- You'll be prompted to enable this feature on first run
+- Use `/logging` in interactive mode to enable/disable
+- Or run `cloi --setup-logging` to configure it directly
+- **Restart your terminal** after enabling logging
+
+**How it works:**
+- Adds ZSH hooks to your `.zshrc` file to automatically capture all commands
+- Uses preexec/precmd hooks to log commands before and after execution
+- Uses `tee` to show output in the terminal while logging it
+- Captures both stdout and stderr for complete error information
+- Adds timestamps and command information for context
+- Manages log file size by rotating logs when they exceed 1MB
 
 ### Why use Cloi?
 
@@ -85,6 +114,12 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 ---
 
 ### Patches 
+
+#### [1.0.7] - May 8th, 2025 @ 2:45pm PST
+- **Feature:** Added automatic terminal output logging (zsh only)
+  - Logs terminal output to `~/.terminal_output.log` for better error analysis
+  - Requires explicit user permission before modifying `.zshrc`
+  - Configure with `/logging` command or `cloi --setup-logging`
 
 #### [1.0.6] - May 5th, 2025 @ 5:30pm PST
 - **Feature:** Included new `phi4-reasoning:plus`,`qwen3`, and ALL your locally installed Ollama models into boxen `/model` for easy access.

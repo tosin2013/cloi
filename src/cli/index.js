@@ -41,10 +41,16 @@ import {
   installModelIfNeeded as installModel
 } from '../core/index.js';
 import { extractDiff, confirmAndApply } from '../utils/patch.js';
-import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback } from '../utils/traceback.js';
+import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback, buildErrorContext, getErrorLines } from '../utils/traceback.js';
 import { startThinking } from '../core/ui/thinking.js';
-import { FrontierClient } from '../core/executor/frontier.js';
-import { KeyManager } from '../utils/keyManager.js';
+// Import prompt builders for debugging
+import { buildAnalysisPrompt, buildSummaryPrompt } from '../core/promptTemplates/analyze.js';
+import { buildErrorTypePrompt } from '../core/promptTemplates/classify.js';
+import { buildCommandFixPrompt } from '../core/promptTemplates/command.js';
+import { buildPatchPrompt } from '../core/promptTemplates/patch.js';
+
+// Import model configuration utilities
+import { getDefaultModel } from '../utils/modelConfig.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
@@ -57,15 +63,15 @@ const __dirname = dirname(__filename);
  * Manages the state (last command, current model) between interactions.
  * @param {string|null} initialCmd - The initial command to have ready for analysis/debugging.
  * @param {number} limit - The history limit to use for /history selection.
- * @param {string} [initialModel='phi4:latest'] - The initial model to use.
+ * @param {string} initialModel - The model to use.
  */
-async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') {
+async function interactiveLoop(initialCmd, limit, initialModel) {
     let lastCmd = initialCmd;
     let currentModel = initialModel;
   
     while (true) {
       console.log(boxen(
-        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
+        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/logging')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
         BOX.PROMPT
       ));
   
@@ -105,21 +111,77 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
           if (newModel) {
             currentModel = newModel;
             process.stdout.write('\n');
-            console.log(boxen(`Using model: ${currentModel}`, BOX.PROMPT));
+            
+            // Save the selected model as the default
+            const { setDefaultModel } = await import('../utils/modelConfig.js');
+            const saveResult = await setDefaultModel(newModel);
+            
+            if (saveResult) {
+              console.log(boxen(`Model ${currentModel} is now set as default`, { ...BOX.OUTPUT, title: 'Success' }));
+            } else {
+              console.log(boxen(`Using model: ${currentModel} for this session only`, BOX.PROMPT));
+              console.log(chalk.yellow('Failed to save as default model'));
+            }
           }
           // Reset terminal state and readline
-          // process.stdout.write('\n');
           closeReadline();
           getReadline();
           break;
         }
-  
+        
+        case '/logging': {
+          // Only applicable for zsh users
+          if (!process.env.SHELL || !process.env.SHELL.includes('zsh')) {
+            console.log(boxen(
+              `Terminal logging is only supported for zsh shell.\nYour current shell is: ${process.env.SHELL || 'unknown'}\n\nCLOI will still work but without auto-logging capabilities.`,
+              { ...BOX.OUTPUT, title: 'Shell Not Supported' }
+            ));
+            break;
+          }
+          
+          // Close readline before importing the logging module
+          closeReadline();
+          
+          const { isLoggingEnabled, setupTerminalLogging, disableLogging } = await import('../utils/terminalLogger.js');
+          const loggingEnabled = await isLoggingEnabled();
+          
+          if (loggingEnabled) {
+            console.log(boxen(
+              `Terminal logging is currently enabled.\nDo you want to disable it?`,
+              { ...BOX.CONFIRM, title: 'Logging Status' }
+            ));
+            
+            const shouldDisable = await askYesNo('Disable terminal logging?');
+            if (shouldDisable) {
+              const success = await disableLogging();
+              if (success) {
+                console.log(boxen(
+                  `Terminal logging has been disabled.\nPlease restart your terminal or run 'source ~/.zshrc' for changes to take effect.`,
+                  { ...BOX.OUTPUT, title: 'Success' }
+                ));
+              } else {
+                console.log(chalk.red('Failed to disable terminal logging.'));
+              }
+            }
+          } else {
+            // Pass UI tools to avoid creating new readline instances
+            const uiTools = { askYesNo, askInput, closeReadline };
+            // Don't show model selection when triggered from interactive loop
+            await setupTerminalLogging(uiTools, false);
+          }
+          
+          // Reopen readline after logging operations are complete
+          getReadline();
+          break;
+        }
+
         case '/help':
           console.log(boxen(
             [
               '/debug    – auto-patch errors using chosen LLM',
               '/model    – pick from installed Ollama models',
               '/history  – pick from recent shell commands',
+              '/logging  – enable/disable terminal output logging (zsh only)',
               '/help     – show this help',
               '/exit     – quit'
             ].join('\n'),
@@ -127,10 +189,32 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
           ));
           break;
   
-        case '/exit':
-          closeReadline();
+        case '/exit': {
+          // Find all running event listeners and active handles
+          const activeHandles = process._getActiveHandles();
           console.log(chalk.blue('bye, for now...'));
-          return;
+          
+          // Close any open resources
+          closeReadline();
+          
+          // Force process exit with no delay
+          setImmediate(() => {
+            activeHandles.forEach(handle => {
+              // Try to close any type of handle that supports it
+              if (handle && typeof handle.close === 'function') {
+                try {
+                  handle.close();
+                } catch (e) {
+                  // Ignore errors during cleanup
+                }
+              }
+            });
+            
+            // Exit the process
+            process.exit(0);
+          });
+          break;
+        }
   
         case '':
           break;
@@ -154,9 +238,9 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
  * Continues until the command succeeds or the user cancels.
  * @param {string} initialCmd - The command to start debugging.
  * @param {number} limit - History limit (passed down from interactive loop/args).
- * @param {string} [currentModel='phi4:latest'] - The Ollama model to use.
+ * @param {string} currentModel - The Ollama model to use.
  */
-async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
+async function debugLoop(initialCmd, limit, currentModel) {
     const iterations = [];
     const ts = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 15);
     const logDir = join(__dirname, 'debug_history');
@@ -173,22 +257,87 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     let fileContentWithLineNumbers = '';
     let codeSummary = '';
     let filePath = '';
+    let isValidSourceFile = false; // Track if we have a valid source file
     // Initialize fileInfo with default values
     let fileInfo = null;
     
-    // First, run the command to see the error
-    let cmd = initialCmd;
-    console.log(chalk.gray('  Reading errors...'));
-    echoCommand(cmd);
-    const { ok, output } = runCommand(cmd);
+    // First, try to extract recent errors from terminal logs
+  let cmd = initialCmd;
+  console.log(chalk.gray('  Looking for recent errors in terminal logs...\n'));
+  
+  // Import and use the terminal log reader and logger
+  const { readTerminalLogs, extractRecentError, isLikelyRuntimeError } = await import('../utils/terminalLogs.js');
+  const { isLoggingEnabled } = await import('../utils/terminalLogger.js');
+  
+  // Check if terminal logging is enabled (for zsh users)
+  const loggingEnabled = process.env.SHELL?.includes('zsh') ? await isLoggingEnabled() : false;
+  
+  // Try to get error from logs first
+  const { error: logError, files: logFiles } = await extractRecentError();
+  
+  // Variables to store final error output
+  let ok = true;
+  let output = '';
+  
+  // If we found a likely runtime error in logs
+  if (logError && logFiles.size > 0) {
+    console.log(chalk.gray(`  Detected error when running: ${initialCmd}\n`));
     
-    if (ok && !/error/i.test(output)) {
-      console.log(boxen(chalk.green('No errors detected.'), { ...BOX.OUTPUT, title: 'Success' }));
-      return;
+    
+    // // List all files that caused the error
+    // if (logFiles.size > 0) {
+    //   console.log(chalk.gray('Files with errors:'));
+    //   for (const file of logFiles.keys()) {
+    //     console.log(chalk.gray(`  - ${file}`));
+    //   }
+    // }
+    
+    // Show the last 5 lines of the traceback error
+    const errorLines = logError.split('\n');
+    const lastFiveLines = errorLines.slice(Math.max(0, errorLines.length - 10));
+    lastFiveLines.forEach(line => console.log(chalk.gray(`    ${line}`)));
+    console.log(chalk.gray(`\n`));
+
+    
+    output = logError;
+    ok = false; // Mark as error since we found one
+  } else {
+    // If logging is not enabled and this is a zsh shell, suggest enabling it
+    if (!loggingEnabled && process.env.SHELL?.includes('zsh')) {
+      console.log(boxen(
+        chalk.gray('Tip: For better error detection, enable terminal logging using the /logging command.\nThis only works with zsh shell and requires a terminal restart to take effect.'),
+        { ...BOX.OUTPUT_DARK, title: 'Suggestion' }
+      ));
     }
     
-    // Extract possible file paths from the command
-    try {
+    // Fall back to running the command if no clear error found in logs
+    console.log(chalk.gray('  Terminal logging is disabled. Running command instead...'));
+    echoCommand(cmd);
+    ({ ok, output } = runCommand(cmd));
+  }
+  
+  if (ok && !/error/i.test(output)) {
+    console.log(boxen(chalk.green('No errors detected.'), { ...BOX.OUTPUT, title: 'Success' }));
+    return;
+  }
+    
+    // Extract possible file paths from the command or error logs
+      try {
+    // If we extracted error from logs and have file paths already, use those
+    if (logError && logFiles && logFiles.size > 0) {
+      // Use the first file from the logs
+      filePath = Array.from(logFiles.keys())[0];
+
+      
+              // Check if it's a valid file
+        isValidSourceFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+        
+        // If not a file, try as absolute path
+        if (!isValidSourceFile && filePath && !filePath.startsWith('/')) {
+        filePath = join(currentDir.trim(), filePath);
+        isValidSourceFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+      }
+    } else {
       // Extract possible filename from commands like "python file.py", "node script.js", etc.
       let possibleFile = initialCmd;
       
@@ -209,22 +358,23 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       
       // First check relative path
       filePath = possibleFile;
-      let isFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+      isValidSourceFile = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
       
       // If not a file, try as absolute path
-      if (!isFile && filePath && !filePath.startsWith('/')) {
+      if (!isValidSourceFile && filePath && !filePath.startsWith('/')) {
         filePath = join(currentDir.trim(), filePath);
-        isFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+        isValidSourceFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
       }
-      
-      // Check if we need additional context from the file
-      // We'll read file content only if:
+    }
+    
+    // Check if we need additional context from the file
+          // We'll read file content only if:
       // 1. It's a valid file AND
       // 2. There are NO clear error lines in the traceback
       const filesWithErrors = extractFilesFromTraceback(output);
       const hasErrorLineInfo = filesWithErrors.size > 0;
       
-      if (isFile && !hasErrorLineInfo) {
+      if (isValidSourceFile && !hasErrorLineInfo) {
         console.log(chalk.gray(`  Analyzing file content...`));
         // Show the sed command that will be used
         const start = 1; // Since we want first 200 lines, starting from line 1
@@ -250,6 +400,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
           path: filePath
         };
         
+        // Summarize code without displaying the prompt
+        
         // Summarize the content - use the version with line numbers for better context
         codeSummary = await summarizeCodeWithLLM(fileContentWithLineNumbers, currentModel);
         // Display summary as indented gray text instead of boxen
@@ -267,6 +419,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     /* eslint-disable no-await-in-loop */
     while (true) {
       // First, run analysis like /analyze would do, but pass additional context
+      // Build the analysis prompt but don't display it
+      
       const { analysis, reasoning: analysisReasoning } = await analyzeWithLLM(
         output, 
         currentModel, 
@@ -289,6 +443,8 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       console.log('\n' +'  ' + chalk.gray(analysis.replace(/\n/g, '\n  ')) + '\n');
       
       // Determine if this is a terminal command issue using LLM
+      // Determine error type without displaying the prompt
+      
       const errorType = await determineErrorType(output, analysis, currentModel);
       // Display error type as indented gray text
       console.log('  ' + chalk.gray(errorType) + '\n');
@@ -296,6 +452,9 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       if (errorType === "TERMINAL_COMMAND_ERROR") {
         // Generate a new command to fix the issue
         const prevCommands = iterations.map(i => i.patch).filter(Boolean);
+        
+        // Generate command fix without displaying the prompt
+        
         const { command: newCommand, reasoning: cmdReasoning } = await generateTerminalCommandFix(prevCommands, analysis, currentModel);
         
         // Display command reasoning if available
@@ -316,9 +475,24 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
         iterations.push({ error: output, patch: newCommand, analysis: analysis });
       } else {
         // Original code file patching logic
+        const prevPatches = iterations.map(i => i.patch);
+        
+        // Extract file paths and line numbers from the traceback
+        const filesWithErrors = extractFilesFromTraceback(output);
+        const errorFiles = Array.from(filesWithErrors.keys()).join('\n');
+        const errorLines = Array.from(filesWithErrors.values()).join('\n');
+        
+        // Get the exact lines of code where errors occur
+        const exactErrorCode = getErrorLines(output);
+        
+        // Get the code context with reduced context size (±3 lines)
+        const context = buildErrorContext(output, 3, false);
+        
+        // Generate patch without displaying the prompt
+        
         const { diff: rawDiff, reasoning: patchReasoning } = await generatePatch(
           output,
-          iterations.map(i => i.patch),
+          prevPatches,
           analysis,
           currentDir.trim(),
           currentModel,
@@ -391,15 +565,50 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       .option('model', {
         alias: 'm',
         describe: 'Ollama model to use for completions',
-        default: 'phi4:14b',
+        default: null,
         type: 'string'
+      })
+      .option('setup-logging', {
+        describe: 'Set up automatic terminal logging',
+        type: 'boolean'
       })
       .help().alias('help', '?')
       .epilog('CLOI - Open source and completely local debugging agent.')
       .parse();
+    
+    // Check if user explicitly requested to set up terminal logging
+    if (argv.setupLogging) {
+      const { setupTerminalLogging } = await import('../utils/terminalLogger.js');
+      const { askYesNo, askInput, closeReadline } = await import('../ui/terminalUI.js');
+      const uiTools = { askYesNo, askInput, closeReadline };
+      // Show model selection during explicit setup
+      const setupResult = await setupTerminalLogging(uiTools, true);
+      if (!setupResult) {
+        console.log(chalk.gray('Terminal logging setup was not completed.'));
+      } else {
+        console.log(boxen(
+          chalk.green('Terminal logging has been enabled.\nAfter restarting your terminal, ALL commands will be automatically logged without any prefix.'),
+          { ...BOX.OUTPUT, title: 'Success' }
+        ));
+      }
+      process.exit(0);
+    }
   
-    // Check if the specified model is installed, install if not
-    let currentModel = argv.model;
+    // Load default model from config or use command line argument if provided
+    let currentModel;
+    
+    try {
+      // First try to get the user's saved default model
+      const savedModel = await getDefaultModel();
+      
+      // If command-line argument is provided, it overrides the saved default
+      currentModel = argv.model || savedModel;
+    } catch (error) {
+      console.error(chalk.yellow(`Error loading default model: ${error.message}`));
+      currentModel = 'phi4:latest';
+    }
+    
+    
     
     if (currentModel) {
       const isOnline = checkNetwork();
@@ -431,11 +640,34 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       }
     }
     
-    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool!!';
+    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool';
     console.log(boxen(
       `${banner}\n↳ model: ${currentModel}\n↳ completely local and secure`,
       BOX.WELCOME
     ));
+    
+    // Check if terminal logging should be set up (only for zsh users)
+    if (process.env.SHELL && process.env.SHELL.includes('zsh')) {
+      const { isLoggingEnabled, setupTerminalLogging } = await import('../utils/terminalLogger.js');
+      
+      // Only prompt if logging is not already enabled
+      if (!(await isLoggingEnabled())) {
+        try {
+          const uiTools = { askYesNo, askInput, closeReadline };
+          // Show model selection during first-run setup
+          const setupResult = await setupTerminalLogging(uiTools, true);
+          
+          // If user gave permission to set up logging, ensure clean exit
+          if (setupResult) {
+            // Process will exit in setupTerminalLogging
+            return;
+          }
+        } catch (error) {
+          console.error(chalk.red(`Error during setup: ${error.message}`));
+          // Continue with normal execution if setup fails
+        }
+      }
+    }
   
     const lastCmd = await lastRealCommand();
     if (!lastCmd) {
@@ -455,48 +687,58 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
  * Allows the user to select a model using an interactive picker.
  * @returns {Promise<string|null>} - Selected model or null if canceled
  */
-async function selectModelFromList() {
+export async function selectModelFromList() {
   const { makePicker } = await import('../ui/terminalUI.js');
-  const { FrontierClient } = await import('../core/executor/frontier.js');
-  const { KeyManager } = await import('../utils/keyManager.js');
   
-  const isOnline = checkNetwork();
-  let models;
-  let title;
-
-  if (isOnline) {
-    models = getAvailableModels();
-    title = 'Available Models';
-    // Get installed models to check status
+  try {
+    // Get all installed models first
     const installedModels = await readModels();
     
-    // To ensure we don't miss any models, create a combined list
-    const allModels = [...new Set([...models, ...installedModels])];
+    // Check for online connectivity to show additional models
+    const isOnline = checkNetwork();
+    let allModels = [...installedModels]; // Start with installed models
+    let popularModels = [];
+    
+    if (isOnline) {
+      // Get popular models from the static list
+      popularModels = getAvailableModels();
+      
+      // Add popular models that aren't already installed
+      for (const model of popularModels) {
+        if (!installedModels.includes(model)) {
+          allModels.push(model);
+        }
+      }
+    }
+    
+    if (allModels.length === 0) {
+      console.log(boxen(
+        chalk.yellow('No Ollama models found. Please install Ollama and at least one model.'),
+        { ...BOX.OUTPUT, title: 'Error' }
+      ));
+      return null;
+    }
     
     // Create display-friendly versions with installation status
     const displayNames = allModels.map(model => {
       const isInstalled = installedModels.includes(model);
-      const isFrontier = FrontierClient.isFrontierModel(model);
       const displayName = model.replace(/:latest$/, '');
+      const displayStatus = isInstalled ? 
+        chalk.green(' ✓ (installed)') : 
+        chalk.gray(' - (available to install)');
       
-      // Color frontier models green, installed models with checkmark
-      if (isFrontier) {
-        return `${chalk.green(displayName)} ${chalk.gray('(Frontier)')}`;
-      }
-      return `${displayName} ${isInstalled ? chalk.green('✓') : chalk.gray('-')}`;
+      return `${displayName}${displayStatus}`;
     });
     
     // Create pairs with install status for sorting
     const modelPairs = displayNames.map((display, i) => {
       const isInstalled = installedModels.includes(allModels[i]);
-      const isFrontier = FrontierClient.isFrontierModel(allModels[i]);
-      return [display, allModels[i], isInstalled, isFrontier];
+      return [display, allModels[i], isInstalled];
     });
     
-    // Sort: frontier models first, then installed, then alphabetically
+    // Sort: installed models first, then alphabetically
     modelPairs.sort((a, b) => {
-      if (a[3] !== b[3]) return b[3] - a[3]; // Frontier models first
-      if (a[2] !== b[2]) return b[2] - a[2]; // Then installed models
+      if (a[2] !== b[2]) return b[2] - a[2]; // Installed models first
       return a[0].localeCompare(b[0]); // Then alphabetically
     });
     
@@ -505,54 +747,13 @@ async function selectModelFromList() {
     const sortedModels = modelPairs.map(pair => pair[1]);
     
     // Create picker with sorted display names
-    const picker = makePicker(sortedDisplayNames, title);
+    const picker = makePicker(sortedDisplayNames, 'Select Model');
     const selected = await picker();
     
     if (!selected) return null;
     
-    // Extract the actual model name from the display name by removing color codes and (Frontier) suffix
-    const cleanSelected = selected.replace(/\u001b\[\d+m/g, '').replace(/\s*\(Frontier\)\s*$/, '').trim();
+    // Map back to the original model name
     const selectedModel = sortedModels[sortedDisplayNames.indexOf(selected)];
-    const isFrontier = FrontierClient.isFrontierModel(selectedModel);
-    
-    console.log(chalk.gray(`Selected model: ${selectedModel} (isFrontier: ${isFrontier})`));
-    
-    if (isFrontier) {
-      // Check if we already have an API key
-      const hasKey = await KeyManager.hasKey(selectedModel);
-      
-      if (!hasKey) {
-        console.log(boxen(
-          `Please enter your API key for ${selectedModel}:`,
-          { ...BOX.CONFIRM, title: 'API Key Required' }
-        ));
-        
-        const apiKey = await askInput('API Key: ');
-        if (!apiKey) {
-          console.log(chalk.yellow('API key is required for frontier models.'));
-          return null;
-        }
-        
-        const stored = await KeyManager.storeKey(selectedModel, apiKey);
-        if (!stored) {
-          console.log(chalk.red('Failed to store API key securely.'));
-          return null;
-        }
-      }
-
-      // Test the API key to make sure it works
-      try {
-        const client = new FrontierClient(selectedModel);
-        await client.getCredentials();
-      } catch (error) {
-        console.log(chalk.red(`Invalid or missing API key: ${error.message}`));
-        // Delete the invalid key
-        await KeyManager.deleteKey(selectedModel);
-        return null;
-      }
-      
-      return selectedModel;
-    }
     
     const isInstalled = installedModels.includes(selectedModel);
     
@@ -572,30 +773,9 @@ async function selectModelFromList() {
     }
     
     return selectedModel;
-  } else {
-    models = await readModels();
-    title = 'Installed Models';
-    
-    // Create display-friendly versions of model names (strip ":latest" suffix)
-    const displayNames = models.map(model => {
-      const isFrontier = FrontierClient.isFrontierModel(model);
-      const displayName = model.replace(/:latest$/, '');
-      return isFrontier ? chalk.green(displayName) : displayName;
-    });
-    
-    // Create sorted pairs of [displayName, originalModel] for sorting and maintaining mapping
-    const modelPairs = displayNames.map((display, i) => [display, models[i]]);
-    modelPairs.sort((a, b) => a[0].localeCompare(b[0]));
-    
-    // Extract sorted display names and original models
-    const sortedDisplayNames = modelPairs.map(pair => pair[0]);
-    const sortedModels = modelPairs.map(pair => pair[1]);
-    
-    // Create picker with sorted display names
-    const picker = makePicker(sortedDisplayNames, title);
-    const selected = await picker();
-    // Map back to the original model name if something was selected
-    return selected ? sortedModels[sortedDisplayNames.indexOf(selected)] : null;
+  } catch (error) {
+    console.error(chalk.red(`Error selecting model: ${error.message}`));
+    return null;
   }
 }
 
@@ -611,3 +791,5 @@ function checkNetwork() {
     return false;
   }
 }
+
+// askInput is already imported from terminalUI.js at the top of the file

@@ -25,43 +25,131 @@ import path from 'path';
  * @returns {boolean} - True if the path seems to be user code.
  */
 export function isUserFile(p) {
-  const skip = [
-    'site-packages','dist-packages','node_modules',
-    'lib/python','/usr/lib/','/system/','<frozen','<string>',
-    '__pycache__','<__array_function__>'
-  ];
-  const low = p.toLowerCase();
-  return !skip.some(m => low.includes(m)) && existsSync(p);
+  // If path doesn't exist or isn't a file, it's not a user file
+  if (!existsSync(p)) {
+    return false;
+  }
+  
+  try {
+    // Get absolute path and normalize it
+    const absolutePath = path.resolve(p);
+    
+    // Directories to skip (common system/package locations)
+    const skip = [
+      // Python
+      'site-packages', 'dist-packages', 'lib/python',
+      // JavaScript/Node.js
+      'node_modules', 'npm', 'yarn',
+      // System paths
+      '/usr/lib/', '/usr/local/lib/', '/var/lib/', '/opt/',
+      '/Library/Frameworks/', '/System/', '/Applications/',
+      // Special paths
+      '<frozen', '<string>', '__pycache__', '<__array_function__>',
+      // Common package managers
+      '.nvm/', '.cargo/', '.gem/', '.conda/',
+      // Ruby
+      'gems/', 'ruby/gems',
+      // Java
+      'jre/', 'jdk/', '.m2/', 'gradle/',
+      // Go
+      'go/pkg/', '.go/pkg/',
+      // Rust
+      '.rustup/', 'cargo/registry/'
+    ];
+    
+    const low = absolutePath.toLowerCase();
+    
+    // Check if the path contains any of the skip directories
+    if (skip.some(dir => low.includes(dir.toLowerCase()))) {
+      return false;
+    }
+    
+    // Check if it's in current working directory or subdirectory
+    const cwd = process.cwd();
+    if (absolutePath.startsWith(cwd)) {
+      return true;
+    }
+    
+    // Check if it's a common temp directory
+    if (low.includes('/tmp/') || low.includes('/temp/')) {
+      return false;
+    }
+    
+    // Check if the file has a standard code extension
+    const codeExtensions = [
+      '.js', '.py', '.rb', '.java', '.c', '.cpp', '.go', '.rs',
+      '.php', '.html', '.css', '.sh', '.json', '.yaml', '.yml',
+      '.jsx', '.tsx', '.ts', '.md', '.txt'
+    ];
+    
+    return codeExtensions.some(ext => low.endsWith(ext));
+    
+  } catch (error) {
+    // If any error occurs during the checks, assume it's not a user file
+    return false;
+  }
 }
 
 /* ───────────────────────────── Extract Traceback Files ────────────────────────── */
 /**
  * Parses a log string (typically stderr output) to extract file paths and line numbers
- * from Python-style traceback lines ("File \"path\", line num"). Filters for user files.
+ * from various language traceback formats. Filters for user files.
  * @param {string} log - The log output containing tracebacks.
  * @returns {Map<string, number>} - A map of user file paths to the most relevant line number found.
  */
 export function extractFilesFromTraceback(log) {
-  const re = /File \"([^\"]+)\", line (\d+)/g;
-  const stackFrames = [];
-  let m;
+  const result = new Map();
   
-  // Extract all stack frames with file paths and line numbers
-  while ((m = re.exec(log)) !== null) {
-    const file = m[1], line = parseInt(m[2], 10);
-    stackFrames.push({ file, line, position: m.index });
+  // Pattern matchers for different programming language traceback formats
+  const patterns = [
+    // Python-style traceback: File "path", line number
+    { regex: /File \"([^\"]+)\", line (\d+)/g, fileGroup: 1, lineGroup: 2 },
+    
+    // JavaScript/Node.js traceback: at module (path:line:column)
+    { regex: /at\s+(?:\w+\s+)?\(?([^()\s]+):(\d+)(?::\d+)?\)?/g, fileGroup: 1, lineGroup: 2 },
+    
+    // Ruby-style traceback: path:line:in `method'
+    { regex: /([^:\s]+):(\d+):in/g, fileGroup: 1, lineGroup: 2 },
+    
+    // Golang-style traceback: path:line +0xabcdef
+    { regex: /([^:\s]+):(\d+)\s+\+0x[a-f0-9]+/g, fileGroup: 1, lineGroup: 2 },
+    
+    // Java/JVM-style traceback: at package.Class.method(Class.java:line)
+    { regex: /at\s+[\w$.]+\(([^:)]+):(\d+)\)/g, fileGroup: 1, lineGroup: 2 },
+    
+    // Generic path:line pattern that might appear in various errors
+    { regex: /\b((?:\/[^\/\s:]+)+\.[a-zA-Z0-9]+):(\d+)/g, fileGroup: 1, lineGroup: 2 }
+  ];
+  
+  // Collect frames for each pattern
+  const allFrames = [];
+  
+  for (const pattern of patterns) {
+    let match;
+    const { regex, fileGroup, lineGroup } = pattern;
+    
+    // Reset the regex for each iteration
+    regex.lastIndex = 0;
+    
+    while ((match = regex.exec(log)) !== null) {
+      const file = match[fileGroup];
+      const line = parseInt(match[lineGroup], 10);
+      
+      // Skip if we couldn't parse the line number
+      if (isNaN(line)) continue;
+      
+      // Store position in the log to determine depth in stack trace
+      allFrames.push({ file, line, position: match.index });
+    }
   }
   
   // Sort by position in the trace (deeper frames appear first in the trace)
-  stackFrames.sort((a, b) => a.position - b.position);
+  allFrames.sort((a, b) => a.position - b.position);
   
   // Filter to user files only
-  const userFrames = stackFrames.filter(frame => isUserFile(frame.file));
+  const userFrames = allFrames.filter(frame => isUserFile(frame.file));
   
-  const result = new Map();
-  
-  // We want to find the deepest frame for each file, which is typically
-  // the most relevant line where the error actually occurs
+  // If we have user frames, process them to get the deepest frame for each file
   if (userFrames.length > 0) {
     // Group by file path
     const fileGroups = {};

@@ -2,10 +2,9 @@
  * Model Router Module
  * 
  * Routes LLM queries to the appropriate executor based on model type.
- * Handles the decision logic for frontier vs. local models.
+ * Handles Ollama model execution.
  */
 
-import { FrontierClient } from './frontier.js';
 import * as OllamaExecutor from './ollama.js';
 import { startThinking } from '../ui/thinking.js';
 
@@ -18,22 +17,12 @@ import { startThinking } from '../ui/thinking.js';
  * @returns {Promise<{response: string, reasoning: string}>} - The model's response
  */
 export async function routeModelQuery(prompt, model, options = {}, optimizationSet = 'error_analysis') {
-  if (FrontierClient.isFrontierModel(model)) {
-    // Use frontier client for frontier models
-    const client = new FrontierClient(model);
-    const response = await client.query(prompt, options);
-    return {
-      response: response.response,
-      reasoning: response.reasoning || ''
-    };
-  } else {
-    // Use Ollama for local models
-    const response = await OllamaExecutor.queryOllamaWithTempScript(prompt, model, optimizationSet);
-    return {
-      response: response,
-      reasoning: ''
-    };
-  }
+  // Use Ollama for all models
+  const response = await OllamaExecutor.queryOllamaWithTempScript(prompt, model, optimizationSet);
+  return {
+    response: response,
+    reasoning: ''
+  };
 }
 
 /**
@@ -45,29 +34,8 @@ export async function routeModelQuery(prompt, model, options = {}, optimizationS
  * @returns {Promise<Object>} - The structured response
  */
 export async function routeStructuredQuery(prompt, model, schema, options = {}) {
-  if (FrontierClient.isFrontierModel(model)) {
-    // Frontier models don't support structured output directly
-    // Use regular query and parse the result
-    const client = new FrontierClient(model);
-    const response = await client.query(prompt, options);
-    
-    // Try to parse JSON from response
-    try {
-      const textResponse = response.response.trim();
-      // Remove markdown code formatting if present
-      const jsonText = textResponse
-        .replace(/^```json\s+/m, '')
-        .replace(/\s*```$/m, '');
-      
-      return JSON.parse(jsonText);
-    } catch (error) {
-      console.error(`Failed to parse structured output: ${error.message}`);
-      return { error: 'Failed to parse structured output', rawResponse: response.response };
-    }
-  } else {
-    // Use Ollama structured output
-    return OllamaExecutor.queryOllamaStructured(prompt, model, schema, options);
-  }
+  // Use Ollama structured output
+  return OllamaExecutor.queryOllamaStructured(prompt, model, schema, options);
 }
 
 /**
@@ -76,35 +44,17 @@ export async function routeStructuredQuery(prompt, model, schema, options = {}) 
  * @returns {Promise<boolean>} - True if successful
  */
 export async function ensureModelAvailable(model) {
-  if (FrontierClient.isFrontierModel(model)) {
-    // For frontier models, we just need a valid client
-    // The actual check for API key happens during query
-    return true;
-  } else {
-    // For Ollama models, ensure it's installed
-    return OllamaExecutor.ensureModel(model);
-  }
+  // For Ollama models, ensure it's installed
+  return OllamaExecutor.ensureModel(model);
 }
 
 /**
- * Gets the list of available models (both local and frontier)
+ * Gets the list of available models (only Ollama models)
  * @param {boolean} includeRemote - Whether to include remote models
  * @returns {string[]} - Array of available models
  */
 export function getAllAvailableModels(includeRemote = true) {
-  const ollamaModels = OllamaExecutor.getAvailableModels();
-  
-  if (!includeRemote) {
-    return ollamaModels;
-  }
-  
-  const frontierModels = [
-    'gpt-4.1',
-    'o3',
-    'o4-mini'
-  ];
-  
-  return [...ollamaModels, ...frontierModels];
+  return OllamaExecutor.getAvailableModels();
 }
 
 /**
@@ -121,14 +71,9 @@ export async function getInstalledModels() {
  * @returns {Promise<boolean>} - True if successful
  */
 export async function installModelIfNeeded(model) {
-  if (FrontierClient.isFrontierModel(model)) {
-    // Can't "install" frontier models
-    return true;
-  } else {
-    const installed = await OllamaExecutor.readModels();
-    if (!installed.includes(model)) {
-      return OllamaExecutor.installModel(model);
-    }
-    return true;
+  const installed = await OllamaExecutor.readModels();
+  if (!installed.includes(model)) {
+    return OllamaExecutor.installModel(model);
   }
+  return true;
 } 
