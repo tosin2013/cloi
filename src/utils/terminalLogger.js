@@ -198,51 +198,139 @@ export async function enableLogging() {
  * @returns {Promise<boolean>} True if the user granted permission and logging was enabled
  */
 export async function setupTerminalLogging() {
-  // Check if logging is already enabled
-  if (await isLoggingEnabled()) {
+  // Import the terminal UI utilities at the beginning
+  const { askYesNo, askInput, closeReadline } = await import('../ui/terminalUI.js');
+  
+  const alreadyEnabled = await isLoggingEnabled();
+  
+  if (alreadyEnabled) {
+    console.log(boxen(
+      chalk.gray('Terminal logging is already enabled.'),
+      { ...BOX.OUTPUT, title: 'Status' }
+    ));
     return true;
   }
   
-  // Only applicable for zsh users
-  if (!process.env.SHELL || !process.env.SHELL.includes('zsh')) {
-    console.log(boxen(
-      `Terminal logging is only supported for zsh shell.\nYour current shell is: ${process.env.SHELL || 'unknown'}\n\nCLOI will still work but without auto-logging capabilities.`,
-      { ...BOX.OUTPUT, title: 'Shell Not Supported' }
-    ));
+  console.log(boxen(
+    [
+      '',
+      'This will add a small script to your .zshrc file that automatically logs terminal commands and their output.',
+      'This helps CLOI detect and diagnose errors even when not explicitly running with `/debug`.',
+      '',
+      'How it works:',
+      '- Creates a log file at ~/.cloi/terminal_output.log',
+      '- Logs all commands and their output',
+      '- Automatically rotates logs to save disk space',
+      '',
+      'Would you like to enable this feature? (y/N):',
+    ].join('\n'),
+    { ...BOX.CONFIRM, title: 'Terminal Logging' }
+  ));
+  
+  const response = await askYesNo('', true);
+  console.log(response ? 'y' : 'N');
+  
+  if (!response) {
     return false;
   }
   
-  console.log(boxen(
-    `CLOI would like to set up automatic terminal output logging to help analyze runtime errors.\n\n` +
-    `This will capture ALL your terminal commands and their output to ~/.cloi/terminal_output.log.\n\n` +
-    `You won't need to type any special prefix - everything will be automatically logged.\n\n` +
-    `The log captures ALL output including error messages and stack traces.\n\n` +
-    `This helps CLOI diagnose issues without re-running potentially harmful commands.\n\n` +
-    `Would you like to enable this feature?`,
-    { ...BOX.CONFIRM, title: 'Enable Terminal Logging' }
-  ));
+  const success = await enableLogging();
   
-  const consent = await askYesNo('Enable automatic terminal logging?');
-  
-  if (consent) {
-    const success = await enableLogging();
-    console.log(`\n`)
-    if (success) {
+  if (success) {
+    console.log(boxen(
+      chalk.green('Terminal logging has been enabled.'),
+      { ...BOX.OUTPUT, title: 'Success' }
+    ));
+    
+    // After successful logging setup, ask user to set default model
+    console.log(boxen(
+      'Would you like to set a default model to use? (y/N):',
+      { ...BOX.CONFIRM, title: 'Default Model Setup' }
+    ));
+    
+    const setModelResponse = await askYesNo('', true);
+    console.log(setModelResponse ? 'y' : 'N');
+    
+    if (setModelResponse) {
+      // Import the necessary functions to select a model
+      const { setDefaultModel, isFrontierModel, storeModelApiKey } = await import('./modelConfig.js');
+      
+      // Import the selectModelFromList function
+      const { selectModelFromList } = await import('../cli/index.js');
+      
       console.log(boxen(
-        `Terminal logging has been enabled!\n\n` +
-        `Please restart your terminal or run 'source ~/.zshrc' for changes to take effect.\n\n` +
-        `After restarting, ALL your terminal commands will be automatically logged.\n\n` +
-        `You don't need to type any special prefix - everything is captured automatically.\n\n` +
-        `All output will be logged to ~/.cloi/terminal_output.log`,
-        { ...BOX.OUTPUT, title: 'Success' }
+        'Please select your preferred default model:',
+        { ...BOX.PROMPT, title: 'Model Selection' }
       ));
-      return true;
-    } else {
-      console.log(chalk.red('Failed to enable terminal logging.'));
-      return false;
+      
+      const selectedModel = await selectModelFromList();
+      
+      if (selectedModel) {
+        // Save the selected model as default
+        const saveResult = await setDefaultModel(selectedModel);
+        
+        if (saveResult) {
+          console.log(boxen(
+            chalk.green(`Your default model has been set to: ${selectedModel}`),
+            { ...BOX.OUTPUT, title: 'Success' }
+          ));
+          
+          // If it's a Frontier model, prompt for API key
+          if (isFrontierModel(selectedModel)) {
+            console.log(boxen(
+              `Please enter your API key for ${selectedModel}:`,
+              { ...BOX.CONFIRM, title: 'API Key Required' }
+            ));
+            
+            const apiKey = await askInput('API Key: ');
+            if (apiKey) {
+              const keyStored = await storeModelApiKey(selectedModel, apiKey);
+              if (keyStored) {
+                console.log(boxen(
+                  chalk.green('API key stored successfully.'),
+                  { ...BOX.OUTPUT, title: 'Success' }
+                ));
+              } else {
+                console.log(boxen(
+                  chalk.yellow('Failed to store API key.'),
+                  { ...BOX.OUTPUT, title: 'Warning' }
+                ));
+              }
+            }
+          }
+        } else {
+          console.log(boxen(
+            chalk.yellow('Failed to save the default model.'),
+            { ...BOX.OUTPUT, title: 'Warning' }
+          ));
+        }
+      }
     }
+    
+    console.log(boxen(
+      'Please restart your terminal or run "source ~/.zshrc" for changes to take effect. Run `cloi` when you encounter the next error.',
+      { ...BOX.OUTPUT, title: 'Action Required' }
+    ));
+    
+    // Force exit the process after showing the message
+    // First cleanup any resources
+    closeReadline();
+    
+    // Force exit with a minimal delay to allow the message to be displayed
+    process.stdout.write('\n'); // Add a newline for better terminal appearance
+    
+    // Ensure all terminal state is reset and process exits 
+    setTimeout(() => {
+      // This is the most reliable way to force Node.js to exit
+      process.exit(0);
+    }, 100);
+    
+    return true;
   } else {
-    console.log(chalk.gray('Terminal logging will not be enabled.'));
+    console.log(boxen(
+      chalk.red('Failed to enable terminal logging.'),
+      { ...BOX.OUTPUT, title: 'Error' }
+    ));
     return false;
   }
 }

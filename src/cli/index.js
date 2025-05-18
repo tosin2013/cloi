@@ -51,6 +51,9 @@ import { buildErrorTypePrompt } from '../core/promptTemplates/classify.js';
 import { buildCommandFixPrompt } from '../core/promptTemplates/command.js';
 import { buildPatchPrompt } from '../core/promptTemplates/patch.js';
 
+// Import model configuration utilities
+import { getDefaultModel } from '../utils/modelConfig.js';
+
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -62,9 +65,9 @@ const __dirname = dirname(__filename);
  * Manages the state (last command, current model) between interactions.
  * @param {string|null} initialCmd - The initial command to have ready for analysis/debugging.
  * @param {number} limit - The history limit to use for /history selection.
- * @param {string} [initialModel='phi4:latest'] - The initial model to use.
+ * @param {string} initialModel - The model to use.
  */
-async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') {
+async function interactiveLoop(initialCmd, limit, initialModel) {
     let lastCmd = initialCmd;
     let currentModel = initialModel;
   
@@ -223,9 +226,9 @@ async function interactiveLoop(initialCmd, limit, initialModel = 'phi4:latest') 
  * Continues until the command succeeds or the user cancels.
  * @param {string} initialCmd - The command to start debugging.
  * @param {number} limit - History limit (passed down from interactive loop/args).
- * @param {string} [currentModel='phi4:latest'] - The Ollama model to use.
+ * @param {string} currentModel - The Ollama model to use.
  */
-async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
+async function debugLoop(initialCmd, limit, currentModel) {
     const iterations = [];
     const ts = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 15);
     const logDir = join(__dirname, 'debug_history');
@@ -550,7 +553,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       .option('model', {
         alias: 'm',
         describe: 'Ollama model to use for completions',
-        default: 'phi4:14b',
+        default: null,
         type: 'string'
       })
       .option('setup-logging', {
@@ -576,8 +579,21 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       process.exit(0);
     }
   
-    // Check if the specified model is installed, install if not
-    let currentModel = argv.model;
+    // Load default model from config or use command line argument if provided
+    let currentModel;
+    
+    try {
+      // First try to get the user's saved default model
+      const savedModel = await getDefaultModel();
+      
+      // If command-line argument is provided, it overrides the saved default
+      currentModel = argv.model || savedModel;
+    } catch (error) {
+      console.error(chalk.yellow(`Error loading default model: ${error.message}`));
+      currentModel = 'phi4:latest';
+    }
+    
+    
     
     if (currentModel) {
       const isOnline = checkNetwork();
@@ -609,7 +625,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
       }
     }
     
-    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool!!';
+    const banner = chalk.blueBright.bold('Cloi') + ' — secure agentic debugging tool';
     console.log(boxen(
       `${banner}\n↳ model: ${currentModel}\n↳ completely local and secure`,
       BOX.WELCOME
@@ -618,16 +634,20 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
     // Check if terminal logging should be set up (only for zsh users)
     if (process.env.SHELL && process.env.SHELL.includes('zsh')) {
       const { isLoggingEnabled, setupTerminalLogging } = await import('../utils/terminalLogger.js');
+      
       // Only prompt if logging is not already enabled
       if (!(await isLoggingEnabled())) {
-        const setupResult = await setupTerminalLogging();
-        // If user gave permission to set up logging, exit and ask them to restart terminal
-        if (setupResult) {
-          console.log(boxen(
-            chalk.green('Please restart your terminal or run: source ~/.zshrc\n Run `cloi` when you encounter the next error.'),
-            { ...BOX.OUTPUT, title: 'Action Required' }
-          ));
-          process.exit(0);
+        try {
+          const setupResult = await setupTerminalLogging();
+          
+          // If user gave permission to set up logging, ensure clean exit
+          if (setupResult) {
+            // Process will exit in setupTerminalLogging
+            return;
+          }
+        } catch (error) {
+          console.error(chalk.red(`Error during setup: ${error.message}`));
+          // Continue with normal execution if setup fails
         }
       }
     }
@@ -650,7 +670,7 @@ async function debugLoop(initialCmd, limit, currentModel = 'phi4:latest') {
  * Allows the user to select a model using an interactive picker.
  * @returns {Promise<string|null>} - Selected model or null if canceled
  */
-async function selectModelFromList() {
+export async function selectModelFromList() {
   const { makePicker } = await import('../ui/terminalUI.js');
   const { FrontierClient } = await import('../core/executor/frontier.js');
   const { KeyManager } = await import('../utils/keyManager.js');
@@ -710,7 +730,6 @@ async function selectModelFromList() {
     const selectedModel = sortedModels[sortedDisplayNames.indexOf(selected)];
     const isFrontier = FrontierClient.isFrontierModel(selectedModel);
     
-    console.log(chalk.gray(`Selected model: ${selectedModel} (isFrontier: ${isFrontier})`));
     
     if (isFrontier) {
       // Check if we already have an API key
@@ -806,3 +825,5 @@ function checkNetwork() {
     return false;
   }
 }
+
+// askInput is already imported from terminalUI.js at the top of the file

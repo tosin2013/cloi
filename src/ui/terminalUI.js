@@ -104,6 +104,7 @@ export function closeReadline() {
  */
 export async function askYesNo(question = '', silent = false) {
   if (!silent) process.stdout.write(`${question} (y/N): `);
+  process.stdout.write('> '); // Add an arrow prompt
   return new Promise(res => {
     const cleanup = () => {
       process.stdin.setRawMode(false);
