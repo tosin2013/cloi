@@ -195,11 +195,13 @@ export async function enableLogging() {
 
 /**
  * Prompts the user for permission to enable automatic terminal output logging
+ * @param {object} uiTools - Object containing UI tools (askYesNo, askInput, etc.)
+ * @param {boolean} showModelSelection - Whether to show model selection (default: false)
  * @returns {Promise<boolean>} True if the user granted permission and logging was enabled
  */
-export async function setupTerminalLogging() {
-  // Import the terminal UI utilities at the beginning
-  const { askYesNo, askInput, closeReadline } = await import('../ui/terminalUI.js');
+export async function setupTerminalLogging(uiTools, showModelSelection = false) {
+  // Use provided UI tools or import them if not provided
+  const { askYesNo, askInput, closeReadline } = uiTools || await import('../ui/terminalUI.js');
   
   const alreadyEnabled = await isLoggingEnabled();
   
@@ -242,67 +244,45 @@ export async function setupTerminalLogging() {
       { ...BOX.OUTPUT, title: 'Success' }
     ));
     
-    // After successful logging setup, ask user to set default model
-    console.log(boxen(
-      'Would you like to set a default model to use? (y/N):',
-      { ...BOX.CONFIRM, title: 'Default Model Setup' }
-    ));
-    
-    const setModelResponse = await askYesNo('', true);
-    console.log(setModelResponse ? 'y' : 'N');
-    
-    if (setModelResponse) {
-      // Import the necessary functions to select a model
-      const { setDefaultModel, isFrontierModel, storeModelApiKey } = await import('./modelConfig.js');
-      
-      // Import the selectModelFromList function
-      const { selectModelFromList } = await import('../cli/index.js');
-      
+    // After successful logging setup, ask user to set default model only if showModelSelection is true
+    if (showModelSelection) {
       console.log(boxen(
-        'Please select your preferred default model:',
-        { ...BOX.PROMPT, title: 'Model Selection' }
+        'Would you like to set a default model to use? (y/N):',
+        { ...BOX.CONFIRM, title: 'Default Model Setup' }
       ));
       
-      const selectedModel = await selectModelFromList();
+      const setModelResponse = await askYesNo('', true);
+      console.log(setModelResponse ? 'y' : 'N');
       
-      if (selectedModel) {
-        // Save the selected model as default
-        const saveResult = await setDefaultModel(selectedModel);
+      if (setModelResponse) {
+        // Import the necessary functions to select a model
+        const { setDefaultModel } = await import('./modelConfig.js');
         
-        if (saveResult) {
-          console.log(boxen(
-            chalk.green(`Your default model has been set to: ${selectedModel}`),
-            { ...BOX.OUTPUT, title: 'Success' }
-          ));
+        // Import the selectModelFromList function
+        const { selectModelFromList } = await import('../cli/index.js');
+        
+        console.log(boxen(
+          'Please select your preferred default model:',
+          { ...BOX.PROMPT, title: 'Model Selection' }
+        ));
+        
+        const selectedModel = await selectModelFromList();
+        
+        if (selectedModel) {
+          // Save the selected model as default
+          const saveResult = await setDefaultModel(selectedModel);
           
-          // If it's a Frontier model, prompt for API key
-          if (isFrontierModel(selectedModel)) {
+          if (saveResult) {
             console.log(boxen(
-              `Please enter your API key for ${selectedModel}:`,
-              { ...BOX.CONFIRM, title: 'API Key Required' }
+              chalk.green(`Your default model has been set to: ${selectedModel}`),
+              { ...BOX.OUTPUT, title: 'Success' }
             ));
-            
-            const apiKey = await askInput('API Key: ');
-            if (apiKey) {
-              const keyStored = await storeModelApiKey(selectedModel, apiKey);
-              if (keyStored) {
-                console.log(boxen(
-                  chalk.green('API key stored successfully.'),
-                  { ...BOX.OUTPUT, title: 'Success' }
-                ));
-              } else {
-                console.log(boxen(
-                  chalk.yellow('Failed to store API key.'),
-                  { ...BOX.OUTPUT, title: 'Warning' }
-                ));
-              }
-            }
+          } else {
+            console.log(boxen(
+              chalk.yellow('Failed to save the default model.'),
+              { ...BOX.OUTPUT, title: 'Warning' }
+            ));
           }
-        } else {
-          console.log(boxen(
-            chalk.yellow('Failed to save the default model.'),
-            { ...BOX.OUTPUT, title: 'Warning' }
-          ));
         }
       }
     }
@@ -314,10 +294,12 @@ export async function setupTerminalLogging() {
     
     // Force exit the process after showing the message
     // First cleanup any resources
-    closeReadline();
+    if (closeReadline) {
+      closeReadline();
+    }
     
     // Force exit with a minimal delay to allow the message to be displayed
-    process.stdout.write('\n'); // Add a newline for better terminal appearance
+    process.stdout.write('\n');
     
     // Ensure all terminal state is reset and process exits 
     setTimeout(() => {

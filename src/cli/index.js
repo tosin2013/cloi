@@ -43,8 +43,6 @@ import {
 import { extractDiff, confirmAndApply } from '../utils/patch.js';
 import { displaySnippetsFromError, readFileContext, extractFilesFromTraceback, buildErrorContext, getErrorLines } from '../utils/traceback.js';
 import { startThinking } from '../core/ui/thinking.js';
-import { FrontierClient } from '../core/executor/frontier.js';
-import { KeyManager } from '../utils/keyManager.js';
 // Import prompt builders for debugging
 import { buildAnalysisPrompt, buildSummaryPrompt } from '../core/promptTemplates/analyze.js';
 import { buildErrorTypePrompt } from '../core/promptTemplates/classify.js';
@@ -113,10 +111,19 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
           if (newModel) {
             currentModel = newModel;
             process.stdout.write('\n');
-            console.log(boxen(`Using model: ${currentModel}`, BOX.PROMPT));
+            
+            // Save the selected model as the default
+            const { setDefaultModel } = await import('../utils/modelConfig.js');
+            const saveResult = await setDefaultModel(newModel);
+            
+            if (saveResult) {
+              console.log(boxen(`Model ${currentModel} is now set as default`, { ...BOX.OUTPUT, title: 'Success' }));
+            } else {
+              console.log(boxen(`Using model: ${currentModel} for this session only`, BOX.PROMPT));
+              console.log(chalk.yellow('Failed to save as default model'));
+            }
           }
           // Reset terminal state and readline
-          // process.stdout.write('\n');
           closeReadline();
           getReadline();
           break;
@@ -131,6 +138,9 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
             ));
             break;
           }
+          
+          // Close readline before importing the logging module
+          closeReadline();
           
           const { isLoggingEnabled, setupTerminalLogging, disableLogging } = await import('../utils/terminalLogger.js');
           const loggingEnabled = await isLoggingEnabled();
@@ -154,11 +164,13 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
               }
             }
           } else {
-            await setupTerminalLogging();
+            // Pass UI tools to avoid creating new readline instances
+            const uiTools = { askYesNo, askInput, closeReadline };
+            // Don't show model selection when triggered from interactive loop
+            await setupTerminalLogging(uiTools, false);
           }
           
-          // Reset terminal state and readline
-          closeReadline();
+          // Reopen readline after logging operations are complete
           getReadline();
           break;
         }
@@ -567,7 +579,10 @@ async function debugLoop(initialCmd, limit, currentModel) {
     // Check if user explicitly requested to set up terminal logging
     if (argv.setupLogging) {
       const { setupTerminalLogging } = await import('../utils/terminalLogger.js');
-      const setupResult = await setupTerminalLogging();
+      const { askYesNo, askInput, closeReadline } = await import('../ui/terminalUI.js');
+      const uiTools = { askYesNo, askInput, closeReadline };
+      // Show model selection during explicit setup
+      const setupResult = await setupTerminalLogging(uiTools, true);
       if (!setupResult) {
         console.log(chalk.gray('Terminal logging setup was not completed.'));
       } else {
@@ -638,7 +653,9 @@ async function debugLoop(initialCmd, limit, currentModel) {
       // Only prompt if logging is not already enabled
       if (!(await isLoggingEnabled())) {
         try {
-          const setupResult = await setupTerminalLogging();
+          const uiTools = { askYesNo, askInput, closeReadline };
+          // Show model selection during first-run setup
+          const setupResult = await setupTerminalLogging(uiTools, true);
           
           // If user gave permission to set up logging, ensure clean exit
           if (setupResult) {
@@ -672,46 +689,56 @@ async function debugLoop(initialCmd, limit, currentModel) {
  */
 export async function selectModelFromList() {
   const { makePicker } = await import('../ui/terminalUI.js');
-  const { FrontierClient } = await import('../core/executor/frontier.js');
-  const { KeyManager } = await import('../utils/keyManager.js');
   
-  const isOnline = checkNetwork();
-  let models;
-  let title;
-
-  if (isOnline) {
-    models = getAvailableModels();
-    title = 'Available Models';
-    // Get installed models to check status
+  try {
+    // Get all installed models first
     const installedModels = await readModels();
     
-    // To ensure we don't miss any models, create a combined list
-    const allModels = [...new Set([...models, ...installedModels])];
+    // Check for online connectivity to show additional models
+    const isOnline = checkNetwork();
+    let allModels = [...installedModels]; // Start with installed models
+    let popularModels = [];
+    
+    if (isOnline) {
+      // Get popular models from the static list
+      popularModels = getAvailableModels();
+      
+      // Add popular models that aren't already installed
+      for (const model of popularModels) {
+        if (!installedModels.includes(model)) {
+          allModels.push(model);
+        }
+      }
+    }
+    
+    if (allModels.length === 0) {
+      console.log(boxen(
+        chalk.yellow('No Ollama models found. Please install Ollama and at least one model.'),
+        { ...BOX.OUTPUT, title: 'Error' }
+      ));
+      return null;
+    }
     
     // Create display-friendly versions with installation status
     const displayNames = allModels.map(model => {
       const isInstalled = installedModels.includes(model);
-      const isFrontier = FrontierClient.isFrontierModel(model);
       const displayName = model.replace(/:latest$/, '');
+      const displayStatus = isInstalled ? 
+        chalk.green(' ✓ (installed)') : 
+        chalk.gray(' - (available to install)');
       
-      // Color frontier models green, installed models with checkmark
-      if (isFrontier) {
-        return `${chalk.green(displayName)} ${chalk.gray('(Frontier)')}`;
-      }
-      return `${displayName} ${isInstalled ? chalk.green('✓') : chalk.gray('-')}`;
+      return `${displayName}${displayStatus}`;
     });
     
     // Create pairs with install status for sorting
     const modelPairs = displayNames.map((display, i) => {
       const isInstalled = installedModels.includes(allModels[i]);
-      const isFrontier = FrontierClient.isFrontierModel(allModels[i]);
-      return [display, allModels[i], isInstalled, isFrontier];
+      return [display, allModels[i], isInstalled];
     });
     
-    // Sort: frontier models first, then installed, then alphabetically
+    // Sort: installed models first, then alphabetically
     modelPairs.sort((a, b) => {
-      if (a[3] !== b[3]) return b[3] - a[3]; // Frontier models first
-      if (a[2] !== b[2]) return b[2] - a[2]; // Then installed models
+      if (a[2] !== b[2]) return b[2] - a[2]; // Installed models first
       return a[0].localeCompare(b[0]); // Then alphabetically
     });
     
@@ -720,53 +747,13 @@ export async function selectModelFromList() {
     const sortedModels = modelPairs.map(pair => pair[1]);
     
     // Create picker with sorted display names
-    const picker = makePicker(sortedDisplayNames, title);
+    const picker = makePicker(sortedDisplayNames, 'Select Model');
     const selected = await picker();
     
     if (!selected) return null;
     
-    // Extract the actual model name from the display name by removing color codes and (Frontier) suffix
-    const cleanSelected = selected.replace(/\u001b\[\d+m/g, '').replace(/\s*\(Frontier\)\s*$/, '').trim();
+    // Map back to the original model name
     const selectedModel = sortedModels[sortedDisplayNames.indexOf(selected)];
-    const isFrontier = FrontierClient.isFrontierModel(selectedModel);
-    
-    
-    if (isFrontier) {
-      // Check if we already have an API key
-      const hasKey = await KeyManager.hasKey(selectedModel);
-      
-      if (!hasKey) {
-        console.log(boxen(
-          `Please enter your API key for ${selectedModel}:`,
-          { ...BOX.CONFIRM, title: 'API Key Required' }
-        ));
-        
-        const apiKey = await askInput('API Key: ');
-        if (!apiKey) {
-          console.log(chalk.yellow('API key is required for frontier models.'));
-          return null;
-        }
-        
-        const stored = await KeyManager.storeKey(selectedModel, apiKey);
-        if (!stored) {
-          console.log(chalk.red('Failed to store API key securely.'));
-          return null;
-        }
-      }
-
-      // Test the API key to make sure it works
-      try {
-        const client = new FrontierClient(selectedModel);
-        await client.getCredentials();
-      } catch (error) {
-        console.log(chalk.red(`Invalid or missing API key: ${error.message}`));
-        // Delete the invalid key
-        await KeyManager.deleteKey(selectedModel);
-        return null;
-      }
-      
-      return selectedModel;
-    }
     
     const isInstalled = installedModels.includes(selectedModel);
     
@@ -786,30 +773,9 @@ export async function selectModelFromList() {
     }
     
     return selectedModel;
-  } else {
-    models = await readModels();
-    title = 'Installed Models';
-    
-    // Create display-friendly versions of model names (strip ":latest" suffix)
-    const displayNames = models.map(model => {
-      const isFrontier = FrontierClient.isFrontierModel(model);
-      const displayName = model.replace(/:latest$/, '');
-      return isFrontier ? chalk.green(displayName) : displayName;
-    });
-    
-    // Create sorted pairs of [displayName, originalModel] for sorting and maintaining mapping
-    const modelPairs = displayNames.map((display, i) => [display, models[i]]);
-    modelPairs.sort((a, b) => a[0].localeCompare(b[0]));
-    
-    // Extract sorted display names and original models
-    const sortedDisplayNames = modelPairs.map(pair => pair[0]);
-    const sortedModels = modelPairs.map(pair => pair[1]);
-    
-    // Create picker with sorted display names
-    const picker = makePicker(sortedDisplayNames, title);
-    const selected = await picker();
-    // Map back to the original model name if something was selected
-    return selected ? sortedModels[sortedDisplayNames.indexOf(selected)] : null;
+  } catch (error) {
+    console.error(chalk.red(`Error selecting model: ${error.message}`));
+    return null;
   }
 }
 

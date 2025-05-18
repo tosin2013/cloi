@@ -13,7 +13,6 @@ import { buildPatchPrompt } from './promptTemplates/patch.js';
 
 // Import executor modules
 import { routeModelQuery, routeStructuredQuery, ensureModelAvailable, getAllAvailableModels, getInstalledModels, installModelIfNeeded } from './executor/router.js';
-import { FrontierClient } from './executor/frontier.js';
 
 // Import UI components
 import { startThinking, getThinkingPhrasesForAnalysis, getThinkingPhrasesForPatch, getThinkingPhrasesForSummarization } from './ui/thinking.js';
@@ -44,8 +43,7 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInf
     // Build the analysis prompt
     const prompt = buildAnalysisPrompt(errorOutput, fileInfo, codeSummary, filePath, context);
     
-    // For o4-mini and o3, we use higher max tokens since they need space for reasoning
-    const max_tokens = model === 'o4-mini' || model === 'o3' ? 512 : 256;
+    const max_tokens = 256;
     
     // Send the query to the appropriate model
     const result = await routeModelQuery(prompt, model, { temperature: 0.3, max_tokens }, 'error_analysis');
@@ -85,8 +83,7 @@ export async function determineErrorType(errorOutput, analysis, model) {
     // Build the error type classification prompt
     const prompt = buildErrorTypePrompt(errorOutput, analysis);
     
-    // For o4-mini and o3, we use higher max tokens to allow for reasoning
-    const max_tokens = model === 'o4-mini' || model === 'o3' ? 64 : 32;
+    const max_tokens = 32;
     
     // Send the query to the appropriate model
     const result = await routeModelQuery(prompt, model, { temperature: 0.1, max_tokens }, 'error_determination');
@@ -119,8 +116,7 @@ export async function generateTerminalCommandFix(prevCommands, analysis, model) 
     // Build the command fix prompt
     const prompt = buildCommandFixPrompt(prevCommands, analysis);
     
-    // For o4-mini and o3, we use higher max tokens to allow for reasoning
-    const max_tokens = model === 'o4-mini' || model === 'o3' ? 512 : 256;
+    const max_tokens = 256;
     
     // Send the query to the appropriate model
     const result = await routeModelQuery(prompt, model, { temperature: 0.1, max_tokens }, 'command_generation');
@@ -226,17 +222,15 @@ export async function generatePatch(
     
     // Try to use structured output if possible
     try {
-      // For o4-mini and o3, we use higher max tokens to allow for reasoning
-      const structuredMaxTokens = model === 'o4-mini' || model === 'o3' ? 768 : 384;
-      const jsonMaxTokens = model === 'o4-mini' || model === 'o3' ? 768 : 384;
-      const textMaxTokens = model === 'o4-mini' || model === 'o3' ? 1024 : 768;
+      const structuredMaxTokens = 384;
+      const jsonMaxTokens = 384;
       
       const structuredResult = await routeStructuredQuery(prompt, model, patchSchema, { 
         temperature: 0.1, 
         max_tokens: structuredMaxTokens 
       });
       
-      // Get the reasoning from the frontier model if available
+      // Get the reasoning from the model if available
       const modelResult = await routeModelQuery(prompt, model, { 
         temperature: 0.1,
         max_tokens: jsonMaxTokens
@@ -267,8 +261,7 @@ export async function generatePatch(
       };
     } catch (error) {
       // Fall back to regular text generation
-      // For o4-mini and o3, we use higher max tokens to allow for reasoning
-      const textMaxTokens = model === 'o4-mini' || model === 'o3' ? 1024 : 768;
+      const textMaxTokens = 768;
       
       const result = await routeModelQuery(prompt, model, { 
         temperature: 0.1, 
@@ -307,8 +300,7 @@ export async function summarizeCodeWithLLM(codeContent, model) {
     // Build the summary prompt
     const prompt = buildSummaryPrompt(codeContent);
     
-    // For o4-mini and o3, we use higher max tokens to allow for reasoning
-    const max_tokens = model === 'o4-mini' || model === 'o3' ? 256 : 128;
+    const max_tokens = 128;
     
     // Send the query to the appropriate model
     const result = await routeModelQuery(prompt, model, { temperature: 0.3, max_tokens }, 'error_analysis');
