@@ -27,6 +27,7 @@ export const BOX = {
   OUTPUT_DARK: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Reasoning', borderColor: 'gray' }
 };
 
+/* ─────────────────────────  Command Display Utilities  ─────────────────────────── */
 /**
  * Prints a shell command styled within a box for visual clarity.
  * @param {string} cmd - The command string to display.
@@ -61,22 +62,67 @@ export function truncateOutput(output, maxLines = 2) {
   return lines.slice(-maxLines).join('\n');
 }
 
-/* ─────────────────────────  Readline Management  ─────────────────────────── */
-/* Global readline instance */
+/* ─────────────────────────  Event Listener Management  ─────────────────────────── */
+let activeListeners = new Set();
 let rl = /** @type {readline.Interface|null} */ (null);
 
+function addListener(event, handler) {
+  activeListeners.add({ event, handler });
+  process.stdin.on(event, handler);
+}
+
+function removeListener(event, handler) {
+  process.stdin.removeListener(event, handler);
+  activeListeners.delete({ event, handler });
+}
+
+function cleanupAllListeners() {
+  activeListeners.forEach(({ event, handler }) => {
+    process.stdin.removeListener(event, handler);
+  });
+  activeListeners.clear();
+}
+
+/**
+ * Ensures stdin is in a clean state by removing all listeners and resetting raw mode.
+ * This should be called before and after any stdin operations.
+ */
+export function ensureCleanStdin() {
+  if (rl) {
+    rl.close();
+    rl = null;
+  }
+  cleanupAllListeners();
+  process.stdin.setRawMode(false);
+  process.stdin.pause();
+  while (process.stdin.read() !== null) { /* flush */ }
+}
+
+function checkForActiveListeners() {
+  const listeners = process.stdin.listeners('keypress').length + 
+                   process.stdin.listeners('data').length;
+  if (listeners > 0) {
+    console.warn(`Warning: Found ${listeners} active listeners`);
+    cleanupAllListeners();
+  }
+}
+
+/* ─────────────────────────  Readline Management  ─────────────────────────── */
 /**
  * Lazily creates and returns a singleton readline interface instance.
  * Ensures that only one interface is active at a time.
  */
 export function getReadline() {
+  ensureCleanStdin(); // Ensure clean state before creating new readline
   if (rl) return rl;
-  rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  rl = readline.createInterface({ 
+    input: process.stdin, 
+    output: process.stdout,
+    terminal: true
+  });
   rl.on('close', () => { 
     rl = null;
-    process.stdin.removeAllListeners('keypress');
-    process.stdin.setRawMode(false);
-    process.stdin.pause();
+    ensureCleanStdin();
   });
   return rl;
 }
@@ -88,10 +134,8 @@ export function closeReadline() {
   if (rl) {
     rl.close();
     rl = null;
-    process.stdin.removeAllListeners('keypress');
-    process.stdin.setRawMode(false);
-    process.stdin.pause();
   }
+  ensureCleanStdin();
 }
 
 /* ─────────────────────────  Yes/No Prompt  ─────────────────────────── */
@@ -103,21 +147,18 @@ export function closeReadline() {
  * @returns {Promise<boolean>} - Resolves true for 'y'/'Y', false for 'n'/'N'.
  */
 export async function askYesNo(question = '', silent = false) {
+  closeReadline();
   if (!silent) process.stdout.write(`${question} (y/N): `);
-  process.stdout.write('> '); // Add an arrow prompt
+  process.stdout.write('> ');
+  
   return new Promise(res => {
     const cleanup = () => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.removeAllListeners('keypress');
-      while (process.stdin.read() !== null) { /* flush */ }
+      ensureCleanStdin();
     };
 
     const onKeypress = (str) => {
       if (/^[yYnN]$/.test(str)) {
         cleanup();
-        const response = str.toUpperCase() === 'Y' ? 'y' : 'N';
-        // process.stdout.write(`${response}\n`);
         res(/^[yY]$/.test(str));
       }
     };
@@ -125,12 +166,11 @@ export async function askYesNo(question = '', silent = false) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     readline.emitKeypressEvents(process.stdin);
-    process.stdin.on('keypress', onKeypress);
+    addListener('keypress', onKeypress);
   });
 }
 
 /* ─────────────────────────  Generic Picker UI  ─────────────────────────── */
-
 /**
  * Factory function to create an interactive terminal picker UI.
  * Allows selecting an item from a list using arrow keys/vim keys.
@@ -140,48 +180,46 @@ export async function askYesNo(question = '', silent = false) {
  * displays the picker and returns the selected item or null if cancelled.
  */
 export function makePicker(items, title = 'Picker') {
-    return async function picker() {
-      closeReadline();
-      if (!items.length) return null;
+  return async function picker() {
+    closeReadline();
+    if (!items.length) return null;
   
-      let idx = items.length - 1;
-      const render = () => {
-        const lines = items.map((it,i) => `${i===idx?chalk.cyan('➤'): ' '} ${it}`);
-        const help  = chalk.gray('\nUse ↑/↓ or k/j, Enter to choose, Esc/q to cancel');
-        const boxed = boxen([...lines, help].join('\n'), { ...BOX.PICKER, title });
+    let idx = items.length - 1;
+    const render = () => {
+      const lines = items.map((it,i) => `${i===idx?chalk.cyan('➤'): ' '} ${it}`);
+      const help  = chalk.gray('\nUse ↑/↓ or k/j, Enter to choose, Esc/q to cancel');
+      const boxed = boxen([...lines, help].join('\n'), { ...BOX.PICKER, title });
   
-        if (render.prevLines) {
-          process.stdout.write(`\x1B[${render.prevLines}F`);  // cursor up
-          process.stdout.write('\x1B[J');                     // clear to end
-        }
-        process.stdout.write(boxed + '\n');
-        render.prevLines = boxed.split('\n').length;
-      };
-      render.prevLines = 0;
-      render();
-  
-      return new Promise(resolve => {
-        const cleanup = () => {
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-          process.stdin.removeAllListeners('keypress');
-          process.stdout.write('\x1B[J');
-        };
-  
-        const onKey = (str, key) => {
-          if (key.name === 'up'   || str === 'k') { idx = Math.max(0, idx-1); render(); }
-          if (key.name === 'down' || str === 'j') { idx = Math.min(items.length-1, idx+1); render(); }
-          if (key.name === 'return') { cleanup(); resolve(items[idx]); }
-          if (key.name === 'escape' || str === 'q') { cleanup(); resolve(null); }
-        };
-  
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-        readline.emitKeypressEvents(process.stdin);
-        process.stdin.on('keypress', onKey);
-      });
+      if (render.prevLines) {
+        process.stdout.write(`\x1B[${render.prevLines}F`);
+        process.stdout.write('\x1B[J');
+      }
+      process.stdout.write(boxed + '\n');
+      render.prevLines = boxed.split('\n').length;
     };
-  }
+    render.prevLines = 0;
+    render();
+  
+    return new Promise(resolve => {
+      const cleanup = () => {
+        ensureCleanStdin();
+        process.stdout.write('\x1B[J');
+      };
+  
+      const onKey = (str, key) => {
+        if (key.name === 'up'   || str === 'k') { idx = Math.max(0, idx-1); render(); }
+        if (key.name === 'down' || str === 'j') { idx = Math.min(items.length-1, idx+1); render(); }
+        if (key.name === 'return') { cleanup(); resolve(items[idx]); }
+        if (key.name === 'escape' || str === 'q') { cleanup(); resolve(null); }
+      };
+  
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      readline.emitKeypressEvents(process.stdin);
+      addListener('keypress', onKey);
+    });
+  };
+}
 
 /**
  * Prompts for input (API Key) with optional masking for sensitive data
@@ -190,39 +228,33 @@ export function makePicker(items, title = 'Picker') {
  * @returns {Promise<string>} - The user's input
  */
 export async function askInput(prompt, mask = true) {
+  closeReadline();
   return new Promise((resolve) => {
     const rl = getReadline();
     
     if (mask) {
-      // Use raw mode to handle character input manually
       const stdin = process.stdin;
       const stdout = process.stdout;
       let input = '';
       
-      // Save current raw state
-      const wasRaw = stdin.isRaw;
-      
-      // Enter raw mode
-      stdin.setRawMode(true);
-      stdin.resume();
-      
-      // Write prompt
-      stdout.write(prompt);
+      const cleanup = () => {
+        removeListener('data', onData);
+        stdin.setRawMode(false);
+        stdin.pause();
+      };
       
       const onData = (data) => {
         const char = data.toString();
         
-        // Handle special keys
         switch (char) {
           case '\u0003': // Ctrl+C
+            cleanup();
             stdout.write('\n');
             process.exit();
             break;
           case '\u000D': // Enter
+            cleanup();
             stdout.write('\n');
-            stdin.removeListener('data', onData);
-            stdin.setRawMode(wasRaw);
-            stdin.pause();
             resolve(input);
             break;
           case '\u007F': // Backspace
@@ -239,7 +271,9 @@ export async function askInput(prompt, mask = true) {
         }
       };
       
-      stdin.on('data', onData);
+      stdin.setRawMode(true);
+      stdin.resume();
+      addListener('data', onData);
     } else {
       rl.question(prompt, (answer) => {
         resolve(answer);

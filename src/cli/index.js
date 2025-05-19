@@ -27,7 +27,17 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 
 // Import from our modules
-import { BOX, echoCommand, truncateOutput, createCommandBox, askYesNo, getReadline, closeReadline, askInput } from '../ui/terminalUI.js';
+import { 
+  BOX, 
+  echoCommand, 
+  truncateOutput, 
+  createCommandBox, 
+  askYesNo, 
+  getReadline, 
+  closeReadline, 
+  askInput,
+  ensureCleanStdin 
+} from '../ui/terminalUI.js';
 import { runCommand, ensureDir, writeDebugLog } from '../utils/cliTools.js';
 import { readHistory, lastRealCommand, selectHistoryItem } from '../utils/history.js';
 import { 
@@ -70,25 +80,27 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
     let currentModel = initialModel;
   
     while (true) {
+      closeReadline(); // Ensure clean state before each iteration
       console.log(boxen(
-        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/history')}, ${chalk.blue('/logging')}, ${chalk.blue('/help')}, ${chalk.blue('/exit')})`,
+        `${chalk.gray('Type a command')} (${chalk.blue('/debug')}, ${chalk.blue('/model')}, ${chalk.blue('/logging')}, ${chalk.blue('/help')})`,
         BOX.PROMPT
       ));
+      // Add improved gray text below the boxen prompt for exit instructions and /debug info
+      console.log(chalk.gray('  Use /debug to analyze and auto-fix the last command. Press ctrl+c to exit.'));
   
-      const input = await new Promise(r =>
-        getReadline().question('> ', t => r(t.trim().toLowerCase()))
-      );
+      const input = await new Promise(r => {
+        const rl = getReadline();
+        rl.question('> ', t => {
+          closeReadline(); // Clean up after getting input
+          r(t.trim().toLowerCase());
+        });
+      });
   
       switch (input) {
-  
         case '/debug': {
-          // Skip command confirmation prompt and directly run debug loop
           process.stdout.write('\n');
           await debugLoop(lastCmd, limit, currentModel);
-          // Reset terminal state and readline
           process.stdout.write('\n');
-          closeReadline();
-          getReadline();
           break;
         }
   
@@ -97,12 +109,8 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
           if (sel) {
             lastCmd = sel;
             console.log(boxen(`Selected command: ${lastCmd}`, { ...BOX.OUTPUT, title: 'History Selection' }));
-            // Skip running the command and just continue the loop with updated lastCmd
           }
-          // Reset terminal state and readline
           process.stdout.write('\n');
-          closeReadline();
-          getReadline();
           break;
         }
   
@@ -112,7 +120,6 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
             currentModel = newModel;
             process.stdout.write('\n');
             
-            // Save the selected model as the default
             const { setDefaultModel } = await import('../utils/modelConfig.js');
             const saveResult = await setDefaultModel(newModel);
             
@@ -123,14 +130,10 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
               console.log(chalk.yellow('Failed to save as default model'));
             }
           }
-          // Reset terminal state and readline
-          closeReadline();
-          getReadline();
           break;
         }
         
         case '/logging': {
-          // Only applicable for zsh users
           if (!process.env.SHELL || !process.env.SHELL.includes('zsh')) {
             console.log(boxen(
               `Terminal logging is only supported for zsh shell.\nYour current shell is: ${process.env.SHELL || 'unknown'}\n\nCLOI will still work but without auto-logging capabilities.`,
@@ -138,9 +141,6 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
             ));
             break;
           }
-          
-          // Close readline before importing the logging module
-          closeReadline();
           
           const { isLoggingEnabled, setupTerminalLogging, disableLogging } = await import('../utils/terminalLogger.js');
           const loggingEnabled = await isLoggingEnabled();
@@ -154,6 +154,7 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
             const shouldDisable = await askYesNo('Disable terminal logging?');
             if (shouldDisable) {
               const success = await disableLogging();
+              console.log('\n');
               if (success) {
                 console.log(boxen(
                   `Terminal logging has been disabled.\nPlease restart your terminal or run 'source ~/.zshrc' for changes to take effect.`,
@@ -164,14 +165,9 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
               }
             }
           } else {
-            // Pass UI tools to avoid creating new readline instances
             const uiTools = { askYesNo, askInput, closeReadline };
-            // Don't show model selection when triggered from interactive loop
             await setupTerminalLogging(uiTools, false);
           }
-          
-          // Reopen readline after logging operations are complete
-          getReadline();
           break;
         }
 
@@ -180,41 +176,14 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
             [
               '/debug    – auto-patch errors using chosen LLM',
               '/model    – pick from installed Ollama models',
-              '/history  – pick from recent shell commands',
+              // '/history  – pick from recent shell commands', // Hidden from help
               '/logging  – enable/disable terminal output logging (zsh only)',
               '/help     – show this help',
-              '/exit     – quit'
+              // '/exit     – quit' // Remove from help
             ].join('\n'),
             BOX.PROMPT
           ));
           break;
-  
-        case '/exit': {
-          // Find all running event listeners and active handles
-          const activeHandles = process._getActiveHandles();
-          console.log(chalk.blue('bye, for now...'));
-          
-          // Close any open resources
-          closeReadline();
-          
-          // Force process exit with no delay
-          setImmediate(() => {
-            activeHandles.forEach(handle => {
-              // Try to close any type of handle that supports it
-              if (handle && typeof handle.close === 'function') {
-                try {
-                  handle.close();
-                } catch (e) {
-                  // Ignore errors during cleanup
-                }
-              }
-            });
-            
-            // Exit the process
-            process.exit(0);
-          });
-          break;
-        }
   
         case '':
           break;
