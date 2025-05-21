@@ -8,9 +8,10 @@
  * Starts and manages a terminal spinner animation with changing text phrases.
  * Indicates that a potentially long-running operation (like LLM interaction) is in progress.
  * @param {string[]} [customPhrases] - Optional custom phrases to display during thinking
+ * @param {boolean} [fixedBottom] - Whether to keep the spinner at the bottom of the terminal
  * @returns {function(): void} - A function to stop the animation and clear the line.
  */
-export function startThinking(customPhrases) {
+export function startThinking(customPhrases, fixedBottom = false) {
   const defaultPhrases = [
     'Brewing ideas','Cooking up something','Putting it together',
     'Low-key figuring it out','Thoughts are thoughting',
@@ -27,9 +28,22 @@ export function startThinking(customPhrases) {
   const startTime = Date.now();
   
   const updateDisplay = () => {
-    process.stdout.clearLine(0);
-    process.stdout.cursorTo(0);
-    process.stdout.write(`${spinner[spinnerFrame]} ${currentPhrase} (${seconds}s)`);
+    if (fixedBottom) {
+      // Save current cursor position
+      process.stdout.write('\x1B[s');
+      // Move to bottom of terminal
+      process.stdout.write('\x1B[999B');
+      // Clear the line
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      process.stdout.write(`${spinner[spinnerFrame]} ${currentPhrase} (${seconds}s)`);
+      // Restore cursor position
+      process.stdout.write('\x1B[u');
+    } else {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      process.stdout.write(`${spinner[spinnerFrame]} ${currentPhrase} (${seconds}s)`);
+    }
   };
 
   // Spinner animation
@@ -48,7 +62,19 @@ export function startThinking(customPhrases) {
   return () => {
     clearInterval(id);
     clearInterval(spinnerInterval);
-    process.stdout.write('\n');
+    if (fixedBottom) {
+      // Save current cursor position
+      process.stdout.write('\x1B[s');
+      // Move to bottom of terminal
+      process.stdout.write('\x1B[999B');
+      // Clear the line
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      // Restore cursor position
+      process.stdout.write('\x1B[u');
+    } else {
+      process.stdout.write('\n');
+    }
   };
 }
 

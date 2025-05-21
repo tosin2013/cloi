@@ -2,8 +2,7 @@
  * Ollama Executor Module
  * 
  * Handles execution of LLM queries via local Ollama models.
- * Uses the Python executor to interact with Python for 
- * Ollama operations with optimized parameters.
+ * Uses the Ollama JavaScript client for direct model interaction.
  */
 
 import { execSync, spawn } from 'child_process';
@@ -17,7 +16,6 @@ import boxen from 'boxen';
 import { askYesNo } from '../../ui/terminalUI.js';
 import { cpus } from 'os';
 import ollama from 'ollama';
-import { runLLMWithPython } from './ollama_engine/pythonExecutor.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
@@ -178,20 +176,103 @@ export async function ensureModel(model) {
 }
 
 /**
+ * Runs a query using Ollama with streaming output
+ * @param {string} prompt - The prompt to send
+ * @param {string} model - Model to use
+ * @param {string} optimizationSet - Optimization preset
+ * @param {Function} [onStreamStart] - Optional callback when streaming begins
+ * @returns {Promise<string>} - The model's response
+ */
+export async function queryOllamaStream(prompt, model, optimizationSet = "error_analysis", onStreamStart = null) {
+  try {
+    await ensureModel(model);
+
+    const cpuThreads = Math.min(8, (cpus()?.length || 2));
+    const defaultOptions = {
+      temperature: 0.1,
+      num_predict: 768,
+      num_thread: cpuThreads,
+      num_batch: 32,
+      mmap: true,
+      int8: true,
+      f16: false,
+      repeat_penalty: 1.0,
+      top_k: 40,
+      top_p: 0.95,
+      cache_mode: "all",
+      use_mmap: true,
+      use_mlock: true
+    };
+
+    // Get optimization set specific options
+    const optimizationSets = {
+      "error_analysis": { temperature: 0.3, num_predict: 512 },
+      "error_determination": { temperature: 0.1, num_predict: 32 },
+      "command_generation": { temperature: 0.1, num_predict: 256 },
+      "patch_generation": { temperature: 0.1, num_predict: 768 }
+    };
+
+    const optSet = optimizationSets[optimizationSet] || optimizationSets["error_analysis"];
+    const options = { ...defaultOptions, ...optSet };
+
+    let fullResponse = '';
+    const stream = await ollama.chat({
+      model: model,
+      messages: [{ role: 'user', content: prompt }],
+      stream: optimizationSet === "error_analysis",
+      options: options
+    });
+
+    if (optimizationSet === "error_analysis") {
+      let outputBuffer = '';
+      let firstChunkReceived = false;
+      
+      // Notify that streaming has started, if callback provided
+      if (typeof onStreamStart === 'function') {
+        onStreamStart();
+      }
+
+      for await (const chunk of stream) {
+        if (!firstChunkReceived) {
+          firstChunkReceived = true;
+        }
+        const content = chunk.message?.content || '';
+        if (content) {
+          outputBuffer += content;
+          // Output in gray with no indentation
+          process.stdout.write(chalk.gray(content));
+        }
+      }
+      
+      // Print a final newline
+      process.stdout.write('\n');
+      fullResponse = outputBuffer;
+    } else {
+      const response = await stream;
+      fullResponse = response.message?.content || '';
+    }
+
+    return fullResponse;
+  } catch (error) {
+    console.error(chalk.red(`Error querying model: ${error.message}`));
+    throw error;
+  }
+}
+
+/**
  * Runs a query using Ollama with optimized settings for each prompt type
  * @param {string} prompt - The prompt to send
  * @param {string} model - Model to use
  * @param {string} optimizationSet - Optimization preset
+ * @param {Function} [onStreamStart] - Optional callback when streaming begins
  * @returns {Promise<string>} - The model's response
  */
-export async function queryOllamaWithTempScript(prompt, model, optimizationSet = "error_analysis") {
+export async function queryOllamaWithTempScript(prompt, model, optimizationSet = "error_analysis", onStreamStart = null) {
   try {
     await ensureModel(model);
     
-    // Use the Python executor to run the query
-    const response = await runLLMWithPython(prompt, model, optimizationSet);
-    
-    return response;
+    // Use the new streaming query function instead of Python executor
+    return await queryOllamaStream(prompt, model, optimizationSet, onStreamStart);
   } catch (error) {
     console.error(chalk.red(`Error querying model: ${error.message}`));
     throw error;
