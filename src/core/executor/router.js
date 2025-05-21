@@ -17,8 +17,11 @@ import { startThinking } from '../ui/thinking.js';
  * @returns {Promise<{response: string, reasoning: string}>} - The model's response
  */
 export async function routeModelQuery(prompt, model, options = {}, optimizationSet = 'error_analysis') {
+  // Extract callback from options if present
+  const { onStreamStart, ...modelOptions } = options;
+  
   // Use Ollama for all models
-  const response = await OllamaExecutor.queryOllamaWithTempScript(prompt, model, optimizationSet);
+  const response = await OllamaExecutor.queryOllamaWithTempScript(prompt, model, optimizationSet, onStreamStart);
   return {
     response: response,
     reasoning: ''

@@ -29,10 +29,12 @@ import chalk from 'chalk';
  * @param {Object} [fileInfo={}] - Optional file information for context
  * @param {string} [codeSummary=''] - Optional code summary
  * @param {string} [filePath=''] - Optional file path
- * @returns {Promise<{analysis: string, reasoning: string}>} - Analysis and reasoning
+ * @param {string} [optimizationSet='error_analysis'] - The optimization set to use
+ * @returns {Promise<{analysis: string, reasoning: string, wasStreamed: boolean}>} - Analysis, reasoning and streaming flag
  */
-export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInfo = {}, codeSummary = '', filePath = '') {
-  const stopThinking = startThinking(getThinkingPhrasesForAnalysis());
+export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInfo = {}, codeSummary = '', filePath = '', optimizationSet = 'error_analysis') {
+  // Start thinking animation - fixed bottom for error_analysis
+  const stopThinking = startThinking(getThinkingPhrasesForAnalysis(), optimizationSet === 'error_analysis');
   
   try {
     await ensureModelAvailable(model);
@@ -45,19 +47,31 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInf
     
     const max_tokens = 256;
     
-    // Send the query to the appropriate model
-    const result = await routeModelQuery(prompt, model, { temperature: 0.3, max_tokens }, 'error_analysis');
+    // Flag to track if response was streamed
+    let wasStreamed = false;
     
-    stopThinking();
+    // Create a callback to stop the spinner when streaming begins
+    const onStreamStart = () => {
+      wasStreamed = true;
+      stopThinking();
+    };
+    
+    // Send the query to the appropriate model with the callback
+    const result = await routeModelQuery(prompt, model, { temperature: 0.3, max_tokens, onStreamStart }, optimizationSet);
+    
+    // Since we're already streaming the output, we don't need to display it again
+    // Just return it for further processing
     return {
       analysis: result.response,
-      reasoning: result.reasoning
+      reasoning: result.reasoning,
+      wasStreamed
     };
   } catch (error) {
     stopThinking();
     return {
       analysis: `Error during analysis: ${error.message}`,
-      reasoning: ''
+      reasoning: '',
+      wasStreamed: false
     };
   }
 }

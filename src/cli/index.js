@@ -263,10 +263,11 @@ async function debugLoop(initialCmd, limit, currentModel) {
     
     // Show the last 5 lines of the traceback error
     const errorLines = logError.split('\n');
-    const lastFiveLines = errorLines.slice(Math.max(0, errorLines.length - 10));
-    lastFiveLines.forEach(line => console.log(chalk.gray(`    ${line}`)));
-    console.log(chalk.gray(`\n`));
-
+    const lastFiveLines = errorLines.slice(Math.max(0, errorLines.length - 4));
+    
+    // Add simple dividers to indicate error section
+    console.log(chalk.gray('  ─────────── Error ───────────'));
+    lastFiveLines.forEach(line => console.log(chalk.gray(`  ${line}`)));
     
     output = logError;
     ok = false; // Mark as error since we found one
@@ -390,7 +391,7 @@ async function debugLoop(initialCmd, limit, currentModel) {
       // First, run analysis like /analyze would do, but pass additional context
       // Build the analysis prompt but don't display it
       
-      const { analysis, reasoning: analysisReasoning } = await analyzeWithLLM(
+      const { analysis, reasoning: analysisReasoning, wasStreamed } = await analyzeWithLLM(
         output, 
         currentModel, 
         fileInfo || { 
@@ -408,8 +409,11 @@ async function debugLoop(initialCmd, limit, currentModel) {
       if (analysisReasoning) {
         console.log(boxen(analysisReasoning, { ...BOX.OUTPUT_DARK, title: 'Reasoning' }));
       }
-      // Display analysis as indented gray text instead of boxen
-      console.log('\n' +'  ' + chalk.gray(analysis.replace(/\n/g, '\n  ')) + '\n');
+      
+      // Only display analysis if it wasn't already streamed
+      if (!wasStreamed) {
+        console.log('\n' +'  ' + chalk.gray(analysis.replace(/\n/g, '\n  ')) + '\n');
+      }
       
       // Determine if this is a terminal command issue using LLM
       // Determine error type without displaying the prompt
@@ -435,7 +439,7 @@ async function debugLoop(initialCmd, limit, currentModel) {
         
         // Ask for confirmation
         if (!(await askYesNo('Run this command?'))) {
-          console.log(chalk.yellow('Debug loop aborted by user.'));
+          console.log(chalk.yellow('\nDebug loop aborted by user.'));
           break;
         }
         
