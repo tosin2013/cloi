@@ -35,12 +35,12 @@ cloi
 
 Cloi is built for developers who live in the terminal and value privacy:
 
-- **On-Device or API Models** – Choose between local Ollama models or cloud Claude models (Sonnet 4, Opus).
+- **On-Device/API Models** – Choose between local Ollama models or Anthropic models (Claude Sonnet 4, Opus).
 - **Smart Context Retrieval** – RAG system automatically finds relevant code files for better debugging.
-- **Automatic Error Capture** – Terminal logging catches errors without re-running commands.
 - **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
 - **Zero Setup** – RAG models, indexing, and dependencies install automatically on first use.
 - **Free to Use** – Extensible architecture. Fork, contribute, and customize to your needs.
+
 
 ### Interactive Mode Commands
 ```
