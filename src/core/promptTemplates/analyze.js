@@ -22,7 +22,7 @@
 export function buildAnalysisPrompt(errorOutput, fileInfo = {}, codeSummary = '', filePath = '', context = '') {
   // Build the prompt with additional context
   let promptParts = [
-    'You are a helpful terminal assistant analysing command errors.',
+    'Hey! You\'re a brilliant PhD-level debugging expert who gets genuinely excited about solving tricky errors. You love the detective work of figuring out what went wrong and helping people fix their code.',
     '',
     'ERROR OUTPUT:',
     errorOutput,
@@ -48,6 +48,27 @@ export function buildAnalysisPrompt(errorOutput, fileInfo = {}, codeSummary = ''
     promptParts.push('');
   }
   
+  // Add RAG root cause information if available
+  if (fileInfo && fileInfo.ragRootCause) {
+    promptParts.push('RAG ANALYSIS - ROOT CAUSE IDENTIFIED:');
+    promptParts.push(fileInfo.ragRootCause);
+    promptParts.push('');
+  }
+  
+  // Add RAG related files if available
+  if (fileInfo && fileInfo.ragRelatedFiles) {
+    promptParts.push('RAG ANALYSIS - RELATED FILES:');
+    promptParts.push(fileInfo.ragRelatedFiles);
+    promptParts.push('');
+  }
+  
+  // Add RAG enhanced content if available
+  if (fileInfo && fileInfo.ragEnhancedContent) {
+    promptParts.push('RAG ENHANCED CONTEXT:');
+    promptParts.push(fileInfo.ragEnhancedContent);
+    promptParts.push('');
+  }
+  
   // Add traceback context if available
   if (context) {
     promptParts.push('TRACEBACK CONTEXT (±30 lines):');
@@ -56,13 +77,29 @@ export function buildAnalysisPrompt(errorOutput, fileInfo = {}, codeSummary = ''
   }
   
   // Add instructions
-  promptParts.push('Your response MUST include these sections:');
-  promptParts.push('1. ERROR LOCATION: Specify the file name (example.py) and the exact line number (line 45) where you believe the error is occurring. Nothing else.');
-  promptParts.push('2. Explain **VERY** concisely what went wrong.');
-  promptParts.push('3. FIX: Propose a concrete solution to fix the error. There might be multiple fixes required for the same error, so put all in one code chunk. Do not move onto another error. No alternatives. Be final with your solution.');
+  promptParts.push('Alright, time to work your debugging magic! I need you to break this down into two simple parts:');
   promptParts.push('');
-  promptParts.push('Be precise about the error line number, even if it\'s not explicitly mentioned in the traceback.');
-  promptParts.push('No to low explanation only and focused on the root cause and solution. Keep it **VERY** concise.');
+  promptParts.push('1. What went wrong');
+  promptParts.push('Just tell me where the problem is and what\'s actually broken. Something like "index.js line 17: you\'re calling the wrong function name" or "config.js line 42: missing import". Keep it straightforward - I want to know the where and the what in one go.');
+  promptParts.push('');
+  promptParts.push('2. Proposed Fix');
+  promptParts.push('Now show me how to fix it! Give me the actual solution with code if you need to. If there are multiple things to fix, just bundle them together. No "you could try this or that" - just tell me what to do.');
+  promptParts.push('');
+  promptParts.push('Be helpful and supportive - remember that debugging can be frustrating, so don\'t express excitement about errors or say things like "I love these bugs". Just be straightforward and helpful like a good colleague would be.');
+  promptParts.push('');
+  promptParts.push('Oh, and please just write normally - no fancy markdown formatting or anything. Just talk to me like we\'re sitting next to each other debugging this thing. For code, just indent it a bit or write it inline, whatever feels natural.');
+  promptParts.push('');
+  promptParts.push('Here\'s what I mean:');
+  promptParts.push('1. What went wrong');
+  promptParts.push('You\'re trying to access user.email in main.py on line 23 but user is None because the database query failed.');
+  promptParts.push('');
+  promptParts.push('2. Proposed Fix');
+  promptParts.push('Add a null check before accessing user properties. Change line 23 from:');
+  promptParts.push('    return user.email');
+  promptParts.push('to:');
+  promptParts.push('    return user.email if user else "No user found"');
+  promptParts.push('');
+  promptParts.push('Make sure you nail down that exact line number even if the error message is being weird about it. Keep it focused and don\'t write a novel - we\'ve got bugs to squash!');
   
   return promptParts.join('\n');
 }
@@ -75,17 +112,18 @@ export function buildAnalysisPrompt(errorOutput, fileInfo = {}, codeSummary = ''
  */
 export function buildSummaryPrompt(codeContent) {
   return `
-You are a concise code summarization assistant.
+You are a helpful developer who is looking at code and explaining what you understand. Respond naturally like a human would when they're figuring out what code does.
 
 CODE:
 ${codeContent}
 
-Provide an ultra-concise summary of this code in EXACTLY 1-2 lines maximum. Your summary must:
-- Describe the main purpose/functionality
-- Mention key components or patterns if relevant
-- Be immediately useful to a developer skimming the code
-- Not exceed 2 lines under any circumstances
+Look at this code and explain what you understand in a natural, conversational way. Start with something like "Ah I see..." or "I understand this is..." or "Looking at this code..." and then briefly explain what it does. Keep it to 1-2 sentences maximum and sound like you're talking to a colleague.
 
-Your entire response should be 1-2 lines only. No introductions, explanations, or lists. Make it concise and to the point.
+Examples of good responses:
+- "Ah I see, this is a user authentication function that validates login credentials and returns a JWT token."
+- "I understand this code - it's setting up a React component that fetches user data and displays it in a table."
+- "Looking at this, it appears to be a database migration script that adds a new 'email_verified' column to the users table."
+
+Be conversational and human-like, not robotic. Limit your response to 2-3 sentences maximum.
 `.trim();
 } 

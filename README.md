@@ -23,7 +23,7 @@ Install globally:
 npm install -g @cloi-ai/cloi
 ```
 
-**No API key needed, runs completely locally.**
+**Works with your existing Ollama models - zero setup, no API key required.**
 
 Navigate to your project directory and call Cloi when you run into an error.
 
@@ -31,53 +31,67 @@ Navigate to your project directory and call Cloi when you run into an error.
 cloi
 ```
 
-### Interactive Mode Commands
-```
-/debug    - Auto-patch errors iteratively using LLM
-/model    - Pick Ollama model
-/history  - Pick from recent shell commands
-/logging  - Enable/disable terminal output logging (zsh only)
-/help     - Show this help
-/exit     - Quit
-```
-
-### Terminal Logging
-
-Cloi provides automatic terminal output logging to help analyze runtime errors without re-running potentially harmful commands.
-
-**Features:**
-- Automatically logs ALL terminal commands and their complete output
-- You don't need to type any special prefix - everything is captured automatically
-- Logs are stored in `~/.cloi/terminal_output.log`
-- Captures detailed error messages and stack traces
-- Keeps log file under 1MB with automatic rotation
-- Only available for zsh users
-- Requires explicit permission
-- Can be enabled/disabled at any time
-
-**Usage:**
-- You'll be prompted to enable this feature on first run
-- Use `/logging` in interactive mode to enable/disable
-- Or run `cloi --setup-logging` to configure it directly
-- **Restart your terminal** after enabling logging
-
-**How it works:**
-- Adds ZSH hooks to your `.zshrc` file to automatically capture all commands
-- Uses preexec/precmd hooks to log commands before and after execution
-- Uses `tee` to show output in the terminal while logging it
-- Captures both stdout and stderr for complete error information
-- Adds timestamps and command information for context
-- Manages log file size by rotating logs when they exceed 1MB
-
 ### Why use Cloi?
 
 Cloi is built for developers who live in the terminal and value privacy:
 
-- **100% Local** – Your code never leaves your machine. No API key needed.
-- **Automates Fixes (Beta)** – Analyze errors and apply patches with a single command.
+- **100% Local** – Your code never leaves your machine. No API key needed for local models.
+- **Smart Context Retrieval** – RAG system automatically finds relevant code files for better debugging.
+- **Multiple AI Models** – Choose between local Ollama models or cloud Claude models (Sonnet 4, Opus).
+- **Automatic Error Capture** – Terminal logging catches errors without re-running commands.
 - **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
-- **Customizable** – Ships with Phi-4. Swap between your locally installed Ollama models.
+- **Zero Setup** – RAG models, indexing, and dependencies install automatically on first use.
 - **Free to Use** – Extensible architecture. Fork, contribute, and customize to your needs.
+
+### Interactive Mode Commands
+```
+/debug    - Auto-fix errors using AI models (sets up RAG automatically)
+/index    - Re-index your codebase for improved debugging accuracy
+/model    - Pick a different AI model (Ollama or Claude)
+/logging  - Set up automatic error logging (zsh only)
+/help     - Show available commands
+```
+
+### Using Claude Models
+
+Want to use Claude Sonnet 4 or Opus-4 instead of local models? Just add your API key:
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key-here"
+```
+
+Add this line to your `~/.zshrc` file, then restart your terminal. Claude models will automatically appear in `/model` selection - zero additional setup required.
+
+### Error Analysis with RAG
+
+Cloi includes Retrieval-Augmented Generation (RAG) for more accurate debugging:
+
+- **Smart Context Retrieval** - Automatically finds relevant code files using semantic and keyword search
+- **Project-Aware Analysis** - Works best in git repositories or organized project structures  
+- **CodeBERT Embeddings** - Uses advanced code understanding for better error analysis
+- **Automatic Setup** - RAG models and indexing are automatically downloaded and configured on first `/debug` run
+
+**Automatic Setup:**
+- CodeBERT model automatically downloads with user permission
+- Required Python packages installed automatically (torch, transformers, flask, numpy)
+- Works best in git repositories or organized project structures
+
+**Note:** Cloi works perfectly without RAG - it just provides enhanced analysis when available.
+
+### Terminal Logging
+
+Automatically captures all terminal commands and output for better error analysis (zsh only).
+
+**Setup:**
+- Run `/logging` or `cloi --setup-logging` 
+- Requires permission to modify `.zshrc`
+- Restart terminal after setup
+
+**What it does:**
+- Logs all commands and output to `~/.cloi/terminal_output.log`
+- Captures detailed error messages and stack traces
+- Auto-rotates when log exceeds 1MB
+- Can be enabled/disabled anytime
 
 ### System Requirements
 
@@ -115,11 +129,19 @@ For more detailed information on contributing, please refer to the [CONTRIBUTING
 
 ### Patches 
 
-#### [1.0.7] - May 8th, 2025 @ 2:45pm PST
+#### [1.0.8] - May 28, 2025 @ 4:00am PST
+- **Feature:** Integrated Retrieval-Augmented Generation (RAG) for enhanced debugging
+  - Hybrid Search Algorithm: Combines BM25 keyword matching with semantic vector search for optimal code retrieval
+  - FAISS Vector Store: Uses Facebook's FAISS library for efficient similarity search across code embeddings
+  - CodeBERT Embeddings: Leverages Hugging Face's microsoft/codebert-base model for code understanding
+  - Automatic Setup: Downloads CodeBERT model (~500MB) and installs Python dependencies automatically on first `/debug` run
+  - Background Service: CodeBERT runs as local HTTP service (port 3090) for fast embedding generation
+
+#### [1.0.7] - May 16th, 2025 @ 2:45pm PST
 - **Feature:** Added automatic terminal output logging (zsh only)
   - Logs terminal output to `~/.terminal_output.log` for better error analysis
   - Requires explicit user permission before modifying `.zshrc`
-  - Configure with `/logging` command or `cloi --setup-logging`
+  - Configure with `/logging` command 
 
 #### [1.0.6] - May 5th, 2025 @ 5:30pm PST
 - **Feature:** Included new `phi4-reasoning:plus`,`qwen3`, and ALL your locally installed Ollama models into boxen `/model` for easy access.

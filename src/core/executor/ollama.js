@@ -59,6 +59,45 @@ export async function readModels() {
 }
 
 /**
+ * Gets all Ollama models (both recommended and installed) with labels
+ * @returns {Promise<Array<{model: string, label: string, isInstalled: boolean}>>} - Array of model objects
+ */
+export async function getAllOllamaModels() {
+  const recommendedModels = getAvailableModels();
+  const installedModels = await readModels();
+  
+  const modelMap = new Map();
+  
+  // Add recommended models first
+  for (const model of recommendedModels) {
+    const isInstalled = installedModels.includes(model);
+    modelMap.set(model, {
+      model,
+      label: `${model} ${isInstalled ? '(Installed)' : '(Recommended)'}`,
+      isInstalled
+    });
+  }
+  
+  // Add any additional installed models that aren't in the recommended list
+  for (const model of installedModels) {
+    if (!modelMap.has(model)) {
+      modelMap.set(model, {
+        model,
+        label: `${model} (Installed)`,
+        isInstalled: true
+      });
+    }
+  }
+  
+  // Convert to array and sort: installed first, then recommended
+  return Array.from(modelMap.values()).sort((a, b) => {
+    if (a.isInstalled && !b.isInstalled) return -1;
+    if (!a.isInstalled && b.isInstalled) return 1;
+    return a.model.localeCompare(b.model);
+  });
+}
+
+/**
  * Installs an Ollama model with UI progress feedback
  * @param {string} modelName - Model to install
  * @returns {Promise<boolean>} - True if installation succeeded
@@ -161,10 +200,10 @@ export async function ensureModel(model) {
     // Ensure the model exists
     const models = await readModels();
     if (!models.includes(model)) {
-      console.log(chalk.yellow(`Model ${model} not found. Installing...`));
-      if (!(await installModel(model))) {
-        console.error(chalk.red(`Failed to install ${model}. Please install it manually.`));
-        return false;
+      console.log(chalk.gray(`Model ${model} not found. Installing...`));
+      const installed = await installModel(model);
+      if (!installed) {
+        throw new Error(`Failed to install model: ${model}`);
       }
     }
     
@@ -226,18 +265,16 @@ export async function queryOllamaStream(prompt, model, optimizationSet = "error_
     if (optimizationSet === "error_analysis") {
       let outputBuffer = '';
       let firstChunkReceived = false;
-      
-      // Notify that streaming has started, if callback provided
-      if (typeof onStreamStart === 'function') {
-        onStreamStart();
-      }
 
       for await (const chunk of stream) {
-        if (!firstChunkReceived) {
-          firstChunkReceived = true;
-        }
         const content = chunk.message?.content || '';
         if (content) {
+          // Notify that streaming has started on first actual content, if callback provided
+          if (!firstChunkReceived && typeof onStreamStart === 'function') {
+            onStreamStart();
+            firstChunkReceived = true;
+          }
+          
           outputBuffer += content;
           // Output in gray with no indentation
           process.stdout.write(chalk.gray(content));

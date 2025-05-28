@@ -47,7 +47,8 @@ export function isLikelyRuntimeError(log) {
     /traceback/i,
     /fail/i,
     /crash/i,
-    /stack trace/i
+    /stack trace/i,
+    /warning/i,
   ];
   
   return errorPatterns.some(pattern => pattern.test(log));

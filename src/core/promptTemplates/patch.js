@@ -17,6 +17,7 @@
  * @param {string} errorLines - Line numbers with errors
  * @param {string} exactErrorCode - Exact code with errors
  * @param {string} context - Error context
+ * @param {Array<Object>} ragFiles - Array of RAG file objects with { path, startLine, endLine, content }
  * @returns {string} - The formatted prompt
  */
 export function buildPatchPrompt(
@@ -29,7 +30,8 @@ export function buildPatchPrompt(
   errorFiles = '',
   errorLines = '',
   exactErrorCode = '',
-  context = ''
+  context = '',
+  ragFiles = []
 ) {
   const prevPatchesText = prevPatches.length
     ? `\n\nPreviously attempted patches:\n${prevPatches.join('\n\n')}`
@@ -39,6 +41,30 @@ export function buildPatchPrompt(
   const fileContentInfo = fileInfo && (fileInfo.withLineNumbers || fileInfo.content)
     ? `File Content (lines ${fileInfo.start || 1}-${fileInfo.end || '?'}):\n${fileInfo.withLineNumbers || fileInfo.content}\n` 
     : '';
+
+  // Format RAG context info for the prompt
+  let ragContextInfo = '';
+  if (fileInfo && fileInfo.ragContext) {
+    if (fileInfo.ragRootCause) {
+      ragContextInfo += `RAG Root Cause Analysis:\n${fileInfo.ragRootCause}\n\n`;
+    }
+    if (fileInfo.ragRelatedFiles) {
+      ragContextInfo += `RAG Related Files:\n${fileInfo.ragRelatedFiles}\n\n`;
+    }
+    if (fileInfo.ragEnhancedContent) {
+      ragContextInfo += `RAG Enhanced Context:\n${fileInfo.ragEnhancedContent}\n\n`;
+    }
+  }
+
+  // Format RAG files and their contents
+  let ragFilesInfo = '';
+  if (ragFiles && ragFiles.length > 0) {
+    ragFilesInfo = 'RAG Retrieved Files and Contents:\n';
+    ragFiles.forEach(file => {
+      ragFilesInfo += `- File: ${file.path} (lines ${file.startLine}-${file.endLine})\n`;
+      ragFilesInfo += `  Content:\n${file.content}\n\n`;
+    });
+  }
 
   return `
 Analyze the error and generate a structured patch in JSON format with the following schema:
@@ -62,7 +88,8 @@ ${currentDir}
 
 ${codeSummary ? `Code Summary:\n${codeSummary}\n` : ''}
 ${fileContentInfo}
-
+${ragContextInfo}
+${ragFilesInfo}
 Error File:
 ${errorFiles || '(none)'}
 

@@ -59,7 +59,7 @@ export function startThinking(customPhrases, fixedBottom = false) {
   };
   tick();
   const id = setInterval(tick, 1000);
-  return () => {
+  return (skipNewline = false) => {
     clearInterval(id);
     clearInterval(spinnerInterval);
     if (fixedBottom) {
@@ -73,7 +73,13 @@ export function startThinking(customPhrases, fixedBottom = false) {
       // Restore cursor position
       process.stdout.write('\x1B[u');
     } else {
-      process.stdout.write('\n');
+      // Clear the line and move cursor to beginning
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      // Only add newline if not skipping it (for streaming)
+      if (!skipNewline) {
+        process.stdout.write('\n');
+      }
     }
   };
 }

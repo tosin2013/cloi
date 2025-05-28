@@ -21,10 +21,10 @@ export const BOX = {
   PROMPT:   { padding: 0.2, margin: 0.5, borderStyle: 'round', width: 75 },
   OUTPUT:   { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Output' },
   ERROR:    { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Error' },
-  ANALYSIS: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, borderColor: '#00AAFF', title: 'AI Error Analysis' }, 
-  CONFIRM:  { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, borderColor: 'yellow', title: 'Confirm' },
+  ANALYSIS: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'AI Error Analysis' }, 
+  CONFIRM:  { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Confirm' },
   PICKER:   { padding: 0.2, margin: 0.5, borderStyle: 'round', width: 75 },   // generic picker box
-  OUTPUT_DARK: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Reasoning', borderColor: 'gray' }
+  OUTPUT_DARK: { padding: 0.5, margin: 0.5, borderStyle: 'round', width: 75, title: 'Reasoning' }
 };
 
 /* ─────────────────────────  Command Display Utilities  ─────────────────────────── */
@@ -32,8 +32,10 @@ export const BOX = {
  * Prints a shell command styled within a box for visual clarity.
  * @param {string} cmd - The command string to display.
  */
-export function echoCommand(cmd) {
+export async function echoCommand(cmd) {
   console.log('');
+  // Add a tiny pause to make the output feel more natural
+  await new Promise(resolve => setTimeout(resolve, 150));
   console.log(`  ${chalk.blueBright.bold('$')} ${chalk.blueBright.bold(cmd)}`);
   console.log('');
 }
@@ -158,8 +160,12 @@ export async function askYesNo(question = '', silent = false) {
 
     const onKeypress = (str) => {
       if (/^[yYnN]$/.test(str)) {
+        const response = /^[yY]$/.test(str);
+        // Echo the user's response and add a newline for proper spacing
+        process.stdout.write(response ? 'y' : 'N');
+        process.stdout.write('\n');
         cleanup();
-        res(/^[yY]$/.test(str));
+        res(response);
       }
     };
 
@@ -280,4 +286,108 @@ export async function askInput(prompt, mask = true) {
       });
     }
   });
+}
+
+/**
+ * Factory function to create an interactive terminal picker UI with section headers.
+ * Allows selecting an item from a list using arrow keys/vim keys, with support for
+ * non-selectable section headers and spacers.
+ * @param {string[]} items - The list of strings to choose from (including headers/spacers)
+ * @param {Map} modelMapping - Map of display names to model names (null for non-selectable)
+ * @param {string} [title='Picker'] - The title displayed on the picker box.
+ * @returns {function(): Promise<string|null>} - An async function that, when called,
+ * displays the picker and returns the selected item or null if cancelled.
+ */
+export function makeSegmentedPicker(items, modelMapping, title = 'Picker') {
+  return async function picker() {
+    closeReadline();
+    if (!items.length) return null;
+  
+    // Find first selectable item
+    let idx = 0;
+    while (idx < items.length && modelMapping.get(items[idx]) === null) {
+      idx++;
+    }
+    if (idx >= items.length) return null; // No selectable items
+    
+    const render = () => {
+      const lines = items.map((item, i) => {
+        // Handle special display items
+        if (item === 'OLLAMA_HEADER') {
+          return chalk.cyan.bold('Ollama Models:');
+        }
+        if (item === 'ANTHROPIC_HEADER') {
+          return chalk.cyan.bold('Anthropic Models:');
+        }
+        if (item === 'SPACER') {
+          return '';
+        }
+        
+        // Regular model items
+        const isSelected = i === idx;
+        const isSelectable = modelMapping.get(item) !== null;
+        
+        if (!isSelectable) {
+          return chalk.gray(item); // Non-selectable items in gray
+        }
+        
+        return `${isSelected ? chalk.cyan('➤') : ' '} ${item}`;
+      });
+      
+      const help = chalk.gray('\nUse ↑/↓ or k/j, Enter to choose, Esc/q to cancel');
+      const boxed = boxen([...lines, help].join('\n'), { ...BOX.PICKER, title });
+  
+      if (render.prevLines) {
+        process.stdout.write(`\x1B[${render.prevLines}F`);
+        process.stdout.write('\x1B[J');
+      }
+      process.stdout.write(boxed + '\n');
+      render.prevLines = boxed.split('\n').length;
+    };
+    render.prevLines = 0;
+    render();
+  
+    return new Promise(resolve => {
+      const cleanup = () => {
+        ensureCleanStdin();
+        process.stdout.write('\x1B[J');
+      };
+      
+      const findNextSelectable = (currentIdx, direction) => {
+        let newIdx = currentIdx;
+        do {
+          newIdx += direction;
+          if (newIdx < 0) newIdx = items.length - 1;
+          if (newIdx >= items.length) newIdx = 0;
+        } while (modelMapping.get(items[newIdx]) === null && newIdx !== currentIdx);
+        return newIdx;
+      };
+  
+      const onKey = (str, key) => {
+        if (key.name === 'up' || str === 'k') { 
+          idx = findNextSelectable(idx, -1); 
+          render(); 
+        }
+        if (key.name === 'down' || str === 'j') { 
+          idx = findNextSelectable(idx, 1); 
+          render(); 
+        }
+        if (key.name === 'return') { 
+          if (modelMapping.get(items[idx]) !== null) {
+            cleanup(); 
+            resolve(items[idx]); 
+          }
+        }
+        if (key.name === 'escape' || str === 'q') { 
+          cleanup(); 
+          resolve(null); 
+        }
+      };
+  
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      readline.emitKeypressEvents(process.stdin);
+      addListener('keypress', onKey);
+    });
+  };
 } 

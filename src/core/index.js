@@ -21,6 +21,7 @@ import { startThinking, getThinkingPhrasesForAnalysis, getThinkingPhrasesForPatc
 import { buildErrorContext, extractFilesFromTraceback, getErrorLines } from '../utils/traceback.js';
 import { convertToUnifiedDiff } from '../utils/patch.js';
 import chalk from 'chalk';
+import fs from 'fs';
 
 /**
  * Analyzes error output with an LLM
@@ -33,8 +34,8 @@ import chalk from 'chalk';
  * @returns {Promise<{analysis: string, reasoning: string, wasStreamed: boolean}>} - Analysis, reasoning and streaming flag
  */
 export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInfo = {}, codeSummary = '', filePath = '', optimizationSet = 'error_analysis') {
-  // Start thinking animation - fixed bottom for error_analysis
-  const stopThinking = startThinking(getThinkingPhrasesForAnalysis(), optimizationSet === 'error_analysis');
+  // Start thinking animation - use normal positioning to avoid spacing issues
+  const stopThinking = startThinking(getThinkingPhrasesForAnalysis(), false);
   
   try {
     await ensureModelAvailable(model);
@@ -42,18 +43,45 @@ export async function analyzeWithLLM(errorOutput, model = 'phi4:latest', fileInf
     // Get traceback context if available
     const context = buildErrorContext(errorOutput, 30);
     
-    // Build the analysis prompt
-    const prompt = buildAnalysisPrompt(errorOutput, fileInfo, codeSummary, filePath, context);
+    // Prepare enhanced file info that includes RAG context
+    let enhancedFileInfo = { ...fileInfo };
     
-    const max_tokens = 256;
+    // If we have RAG context, include it in the prompt
+    if (fileInfo.ragContext) {
+      // Add RAG enhanced context to the file info
+      if (fileInfo.ragEnhancedContext) {
+        enhancedFileInfo.ragEnhancedContent = fileInfo.ragEnhancedContext;
+      }
+      
+      // Include root cause file information
+      if (fileInfo.ragContext.rootCauseFile) {
+        const rootFile = fileInfo.ragContext.rootCauseFile;
+        enhancedFileInfo.ragRootCause = `ROOT CAUSE (score: ${rootFile.score.toFixed(3)}): ${rootFile.path} (lines ${rootFile.startLine}-${rootFile.endLine})`;
+      }
+      
+      // Include related files information
+      if (fileInfo.ragContext.relatedFiles && fileInfo.ragContext.relatedFiles.length > 0) {
+        const relatedInfo = fileInfo.ragContext.relatedFiles.map(file => 
+          `- ${file.path} (lines ${file.startLine}-${file.endLine}, score: ${file.score.toFixed(3)})`
+        ).join('\n');
+        enhancedFileInfo.ragRelatedFiles = `RELATED FILES:\n${relatedInfo}`;
+      }
+    }
+    
+    // Build the analysis prompt with enhanced context
+    const prompt = buildAnalysisPrompt(errorOutput, enhancedFileInfo, codeSummary, filePath, context);
+    
+    const max_tokens = 512; // Increased for RAG context
     
     // Flag to track if response was streamed
     let wasStreamed = false;
     
     // Create a callback to stop the spinner when streaming begins
+    // Both providers now call onStreamStart when first content arrives
     const onStreamStart = () => {
       wasStreamed = true;
-      stopThinking();
+      // Both providers call when content is already appearing, so skip newline for both
+      stopThinking(true);
     };
     
     // Send the query to the appropriate model with the callback
@@ -198,6 +226,56 @@ export async function generatePatch(
     // Get the code context with reduced context size (±3 lines)
     const context = buildErrorContext(errorOutput, 3, false);
     
+    // Build RAG files information with their actual contents if available
+    let ragFiles = [];
+    try {
+      if (fileInfo && fileInfo.ragContext) {
+        const { rootCauseFile, relatedFiles = [] } = fileInfo.ragContext;
+
+        /**
+         * Helper to read file snippet safely.
+         * @param {string} filePath
+         * @param {number} start
+         * @param {number} end
+         * @returns {string}
+         */
+        const readSnippet = (filePath, start, end) => {
+          try {
+            const rawLines = fs.readFileSync(filePath, 'utf8').split('\n');
+            const sliceStart = Math.max(0, (start || 1) - 31); // 30 lines before
+            const sliceEnd = Math.min((end || start) + 30, rawLines.length); // 30 lines after
+            const numbered = rawLines.slice(sliceStart, sliceEnd)
+              .map((line, idx) => `${sliceStart + idx + 1}: ${line}`)
+              .join('\n');
+            return numbered;
+          } catch (_) {
+            return '';
+          }
+        };
+
+        if (rootCauseFile && rootCauseFile.path) {
+          ragFiles.push({
+            path: rootCauseFile.path,
+            startLine: rootCauseFile.startLine,
+            endLine: rootCauseFile.endLine,
+            content: readSnippet(rootCauseFile.path, rootCauseFile.startLine, rootCauseFile.endLine)
+          });
+        }
+
+        for (const rf of relatedFiles) {
+          if (!rf || !rf.path) continue;
+          ragFiles.push({
+            path: rf.path,
+            startLine: rf.startLine,
+            endLine: rf.endLine,
+            content: readSnippet(rf.path, rf.startLine, rf.endLine)
+          });
+        }
+      }
+    } catch (_) {
+      // Silently ignore issues with reading RAG files
+    }
+    
     // Build the patch prompt
     const prompt = buildPatchPrompt(
       errorOutput,
@@ -209,8 +287,14 @@ export async function generatePatch(
       errorFiles,
       errorLines,
       exactErrorCode,
-      context
+      context,
+      ragFiles
     );
+
+    // Display the prompt for debugging purposes
+    // console.log('\n' + chalk.magenta('=== PATCH PROMPT SENT TO LLM ==='));
+    // console.log(chalk.magenta(prompt));
+    // console.log(chalk.magenta('=== END OF PATCH PROMPT ===\n'));
     
     // Define schema for structured output
     const patchSchema = {
@@ -259,13 +343,13 @@ export async function generatePatch(
         if (structuredResult.error || !structuredResult.changes || !Array.isArray(structuredResult.changes)) {
           // Fall back to unstructured response
           diff = modelResult.response;
-          console.log(chalk.yellow('Structured output invalid, falling back to text response'));
+          console.log(chalk.gray('Structured output invalid, falling back to text response'));
         } else {
           diff = convertToUnifiedDiff(structuredResult, currentDir);
         }
       } catch (error) {
         // If conversion fails, fall back to text response
-        console.log(chalk.yellow(`Error converting to diff: ${error.message}`));
+        console.log(chalk.gray(`Error converting to diff: ${error.message}`));
         diff = modelResult.response;
       }
       
@@ -303,7 +387,7 @@ export async function generatePatch(
  * Summarizes code content with an LLM
  * @param {string} codeContent - The code content to summarize
  * @param {string} model - The model to use
- * @returns {Promise<string>} - The summary
+ * @returns {Promise<{summary: string, wasStreamed: boolean}>} - The summary and streaming flag
  */
 export async function summarizeCodeWithLLM(codeContent, model) {
   const stopThinking = startThinking(getThinkingPhrasesForSummarization());
@@ -316,14 +400,35 @@ export async function summarizeCodeWithLLM(codeContent, model) {
     
     const max_tokens = 128;
     
-    // Send the query to the appropriate model
-    const result = await routeModelQuery(prompt, model, { temperature: 0.3, max_tokens }, 'error_analysis');
+    // Flag to track if response was streamed
+    let wasStreamed = false;
     
-    stopThinking();
-    return result.response.trim();
+    // Create a callback to stop the spinner when streaming begins
+    // Both providers now call onStreamStart when first content arrives
+    const onStreamStart = () => {
+      wasStreamed = true;
+      // Both providers call when content is already appearing, so skip newline for both
+      stopThinking(true);
+    };
+    
+    // Send the query to the appropriate model with the callback
+    const result = await routeModelQuery(prompt, model, { temperature: 0.3, max_tokens, onStreamStart }, 'error_analysis');
+    
+    // Only stop thinking if it wasn't already stopped by streaming
+    if (!wasStreamed) {
+      stopThinking();
+    }
+    
+    return {
+      summary: result.response.trim(),
+      wasStreamed
+    };
   } catch (error) {
     stopThinking();
-    return `Error during summarization: ${error.message}`;
+    return {
+      summary: `Error during summarization: ${error.message}`,
+      wasStreamed: false
+    };
   }
 }
 

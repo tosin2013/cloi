@@ -225,11 +225,11 @@ export function buildErrorContext(log, contextSize = 30, includeHeaders = true) 
  * @param {number} line - Target line number.
  * @param {number} [ctx=1] - Lines of context before and after (default is 1).
  */
-export function showSnippet(file, line, ctx = 30) {
+export async function showSnippet(file, line, ctx = 30) {
   const start = Math.max(1, line - ctx), end = line + ctx;
   const cmd   = `sed -n '${start},${end}p' ${basename(file)}`;
   console.log(chalk.gray(`  Retrieving file context ${basename(file)}...`));
-  echoCommand(cmd);
+  await echoCommand(cmd);
   const { ok, output } = runCommand(cmd, 5000);
   // Not using readFileContext here as we want to run the command directly for output display
 }
@@ -240,9 +240,9 @@ export function showSnippet(file, line, ctx = 30) {
  * relevant code snippets using `showSnippet`.
  * @param {string} log - The error log content.
  */
-export function displaySnippetsFromError(log) {
+export async function displaySnippetsFromError(log) {
   for (const [file, line] of extractFilesFromTraceback(log)) {
-    showSnippet(file, line);
+    await showSnippet(file, line);
   }
 }
 

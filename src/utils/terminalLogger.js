@@ -240,7 +240,7 @@ export async function setupTerminalLogging(uiTools, showModelSelection = false) 
   
   if (success) {
     console.log(boxen(
-      chalk.green('Terminal logging has been enabled.'),
+      chalk.green('Terminal logging setup successful.\nPlease restart your terminal or run `source ~/.zshrc` to activate.'),
       { ...BOX.OUTPUT, title: 'Success' }
     ));
     
@@ -279,8 +279,8 @@ export async function setupTerminalLogging(uiTools, showModelSelection = false) 
             ));
           } else {
             console.log(boxen(
-              chalk.yellow('Failed to save the default model.'),
-              { ...BOX.OUTPUT, title: 'Warning' }
+              chalk.gray('Failed to save the default model.'),
+              { ...BOX.OUTPUT_DARK, title: 'Setup Incomplete' }
             ));
           }
         }

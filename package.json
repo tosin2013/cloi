@@ -1,6 +1,6 @@
 {
     "name": "@cloi-ai/cloi",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "description": "Security-first agentic debugging tool for the terminal",
     "main": "bin/index.js",
     "type": "module",
@@ -14,18 +14,26 @@
         "dev": "node bin/index.js",
         "dev:setup": "node bin/cloi-setup.cjs",
         "dev:ollama": "node bin/ollama-setup.cjs",
+        "codebert-setup": "node bin/codebert-setup.cjs",
+        "codebert-service": "python3 bin/codebert_service.py --port 3090",
+        "codebert-start": "nohup python3 bin/codebert_service.py --port 3090 > /dev/null 2>&1 & echo 'CodeBERT service started in background'",
+        "setup-all": "npm run dev:setup && npm run codebert-setup && npm run dev:ollama",
         "link": "npm link",
         "unlink": "npm unlink",
         "clean": "rm -rf node_modules package-lock.json",
-        "reinstall": "npm run clean && npm install"
+        "reinstall": "npm run clean && npm install",
+        "test-rag": "node -e \"import('./src/rag/index.js').then(r => console.log('RAG system loaded successfully'))\""
     },
     "author": "Gabriel Cha, Min Kim",
     "license": "GPL-3.0",
     "dependencies": {
+        "@anthropic-ai/sdk": "^0.52.0",
+        "@huggingface/transformers": "^3.0.2",
         "boxen": "^8.0.1",
         "chalk": "^5.4.1",
-        "keytar": "^7.9.0",
+        "faiss-node": "^0.5.1",
         "ollama": "0.5.15",
+        "seedrandom": "^3.0.5",
         "yargs": "^17.7.2"
     },
     "engines": {
@@ -44,7 +52,9 @@
         "ollama",
         "ai",
         "debugging",
-        "shell",
+        "claude",
+        "sonnet",
+        "opus",
         "command-line",
         "developer-tools"
     ],

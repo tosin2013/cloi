@@ -121,14 +121,14 @@ function applyPatch(diff, cwd = process.cwd()) {
   for (const p of pLevels) {
     const res = spawnSync('patch', [
       `-p${p}`, '--batch', '--forward', '--fuzz', '3', '--reject-file=-'
-    ], { cwd, input: diff, stdio: ['pipe', 'inherit', 'inherit'] });
+    ], { cwd, input: diff, stdio: ['pipe', 'pipe', 'pipe'] }); // Capture all output
     if (res.status === 0) return;   // success
   }
 
   // 7) Fallback: git apply --3way if inside a repo
   if (inGitRepo()) {
     const git = spawnSync('git', ['apply', '--3way', '--whitespace=nowarn', '-'],
-      { cwd, input: diff, stdio: ['pipe', 'inherit', 'inherit'] });
+      { cwd, input: diff, stdio: ['pipe', 'pipe', 'pipe'] }); // Capture all output
     if (git.status === 0) return;
   }
 
@@ -247,16 +247,20 @@ export async function confirmAndApply(diff, cwd = process.cwd()) {
   // Display the patch
   showPatch(diff);
   
+  // Add spacing before confirmation prompt to prevent UI collision
+  console.log('');
+  
   // Ask for confirmation
   if (!(await askYesNo('Apply this patch?'))) return false;
   
   try {
     // Apply the patch if confirmed
     applyPatch(diff, cwd);
-    console.log(chalk.green('✓ Patch applied\n'));
+    //console.log(chalk.green('  ✓ Patch applied\n'));
     return true;
   } catch (e) {
-    console.error(chalk.red(`Patch failed: ${e.message}`));
+    // Show a simple gray message instead of verbose error output
+    console.log(chalk.gray('  Patch tool failed to apply the changes automatically\n'));
     return false;
   }
 }
