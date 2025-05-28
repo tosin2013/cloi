@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/license-GLP%203.0-green" alt="license" />
 </div>
 <br>
-<div align="center"><img src="assets/demovid.gif" alt="Cloi CLI Demo" /></div>
+<div align="center"><img src="assets/1.0.8.mp4" alt="Cloi CLI Demo" /></div>
 
 ## Overview
 
@@ -35,7 +35,7 @@ cloi
 
 Cloi is built for developers who live in the terminal and value privacy:
 
-- **100% Local** – Your code never leaves your machine. No API key needed for local models.
+- **100% Local** – Your code never leaves your machine. No API key required for local models.
 - **Smart Context Retrieval** – RAG system automatically finds relevant code files for better debugging.
 - **Multiple AI Models** – Choose between local Ollama models or cloud Claude models (Sonnet 4, Opus).
 - **Automatic Error Capture** – Terminal logging catches errors without re-running commands.
@@ -52,46 +52,24 @@ Cloi is built for developers who live in the terminal and value privacy:
 /help     - Show available commands
 ```
 
-### Using Claude Models
+### Using Claude-4 Model
 
 Want to use Claude Sonnet 4 or Opus-4 instead of local models? Just add your API key:
+>
+>```bash
+>export ANTHROPIC_API_KEY="your-api-key-here"
+>```
+>
+>Add this line to your `~/.zshrc` file, then restart your terminal. Claude models will automatically appear in `/model` selection - zero additional setup required.
 
-```bash
-export ANTHROPIC_API_KEY="your-api-key-here"
-```
+### RAG
 
-Add this line to your `~/.zshrc` file, then restart your terminal. Claude models will automatically appear in `/model` selection - zero additional setup required.
-
-### Error Analysis with RAG
-
-Cloi includes Retrieval-Augmented Generation (RAG) for more accurate debugging:
-
-- **Smart Context Retrieval** - Automatically finds relevant code files using semantic and keyword search
-- **Project-Aware Analysis** - Works best in git repositories or organized project structures  
-- **CodeBERT Embeddings** - Uses advanced code understanding for better error analysis
-- **Automatic Setup** - RAG models and indexing are automatically downloaded and configured on first `/debug` run
-
-**Automatic Setup:**
-- CodeBERT model automatically downloads with user permission
-- Required Python packages installed automatically (torch, transformers, flask, numpy)
-- Works best in git repositories or organized project structures
-
-**Note:** Cloi works perfectly without RAG - it just provides enhanced analysis when available.
+Cloi uses Retrieval-Augmented Generation to find relevant code files across your entire codebase when debugging. RAG combines CodeBERT (500 MB) embeddings with BM25 keyword search to identify files related to your error. Auto-installs on first `/debug` run.
 
 ### Terminal Logging
 
-Automatically captures all terminal commands and output for better error analysis (zsh only).
-
-**Setup:**
-- Run `/logging` or `cloi --setup-logging` 
-- Requires permission to modify `.zshrc`
-- Restart terminal after setup
-
-**What it does:**
-- Logs all commands and output to `~/.cloi/terminal_output.log`
-- Captures detailed error messages and stack traces
-- Auto-rotates when log exceeds 1MB
-- Can be enabled/disabled anytime
+Enable automatic error capture without making cloi re-run commands. Run `/logging` to modify your `.zshrc`, then restart your terminal. All output gets saved to `~/.cloi/terminal_output.log` with auto-rotation (1 MB). (zsh only)
+**Note:** Currently only tested with zsh shell.
 
 ### System Requirements
 

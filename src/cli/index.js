@@ -69,6 +69,50 @@ const __dirname = dirname(__filename);
 
 /* ───────────────────────── Interactive Loop ────────────────────────────── */
 /**
+ * Enhanced error detection function that recognizes various failure patterns
+ * @param {string} output - The command output to analyze
+ * @returns {boolean} - True if an error/failure is detected
+ */
+function detectFailure(output) {
+  if (!output || typeof output !== 'string') return false;
+  
+  // Common failure patterns (case-insensitive)
+  const failurePatterns = [
+    /error/i,                    // Original pattern
+    /failed/i,                   // "Failed to start", "Build failed", etc.
+    /exception/i,                // JavaScript/Java exceptions
+    /traceback/i,                // Python tracebacks
+    /fatal/i,                    // Fatal errors
+    /warning.*not found/i,       // Warnings about missing things
+    /cannot find/i,              // "Cannot find module", etc.
+    /no such file/i,            // File not found errors
+    /permission denied/i,        // Permission issues
+    /command not found/i,        // Command errors
+    /syntax error/i,            // Code syntax issues
+    /reference error/i,         // JavaScript reference errors
+    /type error/i,              // Type errors
+    /import error/i,            // Import/require errors
+    /module.*not found/i,       // Module resolution failures
+    /connection.*refused/i,     // Network connection issues
+    /timeout/i,                 // Timeout errors
+    /compilation.*failed/i,     // Build/compilation failures
+    /abort/i,                   // Aborted operations
+    /crash/i,                   // Application crashes
+    /segmentation fault/i,      // Low-level crashes
+    /stack overflow/i,          // Stack overflow errors
+    /out of memory/i,           // Memory issues
+    /invalid/i,                 // Invalid configurations, arguments, etc.
+    /unauthorized/i,            // Auth failures
+    /forbidden/i,               // Access denied
+    /not implemented/i,         // Unimplemented features
+    /deprecated/i,              // Deprecated warnings (often indicate issues)
+    /unsupported/i             // Unsupported operations
+  ];
+  
+  return failurePatterns.some(pattern => pattern.test(output));
+}
+
+/**
  * Runs the main interactive loop of the FigAI CLI.
  * Presents a prompt allowing the user to execute commands like /analyze, /debug, /history, /model.
  * Manages the state (last command, current model) between interactions.
@@ -956,7 +1000,7 @@ async function debugLoop(initialCmd, limit, currentModel) {
       ({ ok, output } = runCommand(cmd));
     }
     
-    if (ok && !/error/i.test(output)) {
+    if (ok && !detectFailure(output)) {
       console.log(boxen(chalk.green('Wait... this actually worked fine! No errors here.'), { ...BOX.OUTPUT, title: 'All Good!' }));
       return;
     }
