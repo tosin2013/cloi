@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/license-GLP%203.0-green" alt="license" />
 </div>
 <br>
-<div align="center"><img src="assets/1.0.8.mp4" alt="Cloi CLI Demo" /></div>
+<div align="center"><img src="assets/finaldemo.gif" alt="Cloi CLI Demo" /></div>
 
 ## Overview
 
@@ -35,9 +35,8 @@ cloi
 
 Cloi is built for developers who live in the terminal and value privacy:
 
-- **100% Local** – Your code never leaves your machine. No API key required for local models.
+- **On-Device or API Models** – Choose between local Ollama models or cloud Claude models (Sonnet 4, Opus).
 - **Smart Context Retrieval** – RAG system automatically finds relevant code files for better debugging.
-- **Multiple AI Models** – Choose between local Ollama models or cloud Claude models (Sonnet 4, Opus).
 - **Automatic Error Capture** – Terminal logging catches errors without re-running commands.
 - **Safe Changes** – Review all diffs before applying. Full control to accept or reject.
 - **Zero Setup** – RAG models, indexing, and dependencies install automatically on first use.
