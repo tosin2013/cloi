@@ -1,0 +1,362 @@
+name: AI Documentation Enhancement
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**/*.js'
+      - 'bin/**/*.py'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 2 AM
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+
+jobs:
+  ai-api-docs:
+    name: AI API Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Extract API structure
+        run: |
+          # Create a script to extract API information
+          cat > extract_api.js << 'EOF'
+          import fs from 'fs';
+          import path from 'path';
+          
+          function extractJSFunctions(filePath) {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const functions = [];
+            
+            // Extract function declarations and exports
+            const functionRegex = /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\([^)]*\)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>/g;
+            const classRegex = /class\s+(\w+)(?:\s+extends\s+\w+)?\s*{/g;
+            
+            let match;
+            while ((match = functionRegex.exec(content)) !== null) {
+              functions.push({
+                name: match[1] || match[2],
+                type: 'function',
+                file: filePath
+              });
+            }
+            
+            while ((match = classRegex.exec(content)) !== null) {
+              functions.push({
+                name: match[1],
+                type: 'class',
+                file: filePath
+              });
+            }
+            
+            return functions;
+          }
+          
+          function scanDirectory(dir) {
+            const items = [];
+            const files = fs.readdirSync(dir, { withFileTypes: true });
+            
+            for (const file of files) {
+              const fullPath = path.join(dir, file.name);
+              if (file.isDirectory() && !file.name.startsWith('.')) {
+                items.push(...scanDirectory(fullPath));
+              } else if (file.name.endsWith('.js') || file.name.endsWith('.cjs') || file.name.endsWith('.mjs')) {
+                items.push(...extractJSFunctions(fullPath));
+              }
+            }
+            
+            return items;
+          }
+          
+          const apiStructure = {
+            core: scanDirectory('src/core'),
+            rag: scanDirectory('src/rag'),
+            utils: scanDirectory('src/utils'),
+            ui: scanDirectory('src/ui')
+          };
+          
+          fs.writeFileSync('api_structure.json', JSON.stringify(apiStructure, null, 2));
+          console.log('API structure extracted');
+          EOF
+          
+          node extract_api.js
+      
+      - name: Generate API documentation with AI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read the API structure
+          api_structure=$(cat api_structure.json)
+          
+          doc_prompt="You are a technical documentation expert for the Cloi project - a security-first agentic debugging tool.
+          
+          Please generate comprehensive API documentation in markdown format based on this code structure. Include:
+          
+          1. **Overview**: Brief description of each module's purpose
+          2. **Core Module**: Document the main executor classes and LLM integration
+          3. **RAG Module**: Document the embedding and retrieval system
+          4. **Utils Module**: Document utility functions for git, patches, API keys
+          5. **UI Module**: Document terminal interface components
+          
+          Format as proper markdown with:
+          - Clear headings and sections
+          - Code examples where helpful
+          - Parameter descriptions
+          - Return value information
+          - Usage examples for key functions
+          
+          Make it developer-friendly and focus on how to extend or modify the codebase.
+          
+          API Structure:
+          $api_structure"
+          
+          response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $(echo "$doc_prompt" | jq -Rs .)
+                }
+              ],
+              \"model\": \"openai/gpt-4o\"
+            }")
+          
+          # Extract and save the documentation
+          documentation=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "# API Documentation\n\nFailed to generate documentation")
+          
+          # Create docs directory if it doesn't exist
+          mkdir -p docs
+          
+          # Write the documentation
+          echo "$documentation" > docs/API.md
+          
+          echo "API documentation generated"
+      
+      - name: Generate architecture documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read project structure
+          project_structure=$(find src -type f -name "*.js" | head -20)
+          package_info=$(cat package.json | jq -r '.dependencies | keys | join(", ")')
+          
+          arch_prompt="You are a software architect documenting the Cloi project.
+          
+          Please create a comprehensive architecture document in markdown format covering:
+          
+          1. **System Overview**: High-level architecture of Cloi
+          2. **Component Architecture**: How modules interact
+          3. **Data Flow**: How data moves through the system
+          4. **Integration Points**: External services (Ollama, Claude, CodeBERT)
+          5. **Security Architecture**: How security is implemented
+          6. **Extension Points**: How developers can extend the system
+          
+          Key information:
+          - This is a Node.js CLI tool with Python ML services
+          - Uses RAG (Retrieval Augmented Generation) with CodeBERT embeddings
+          - Supports both local (Ollama) and cloud (Claude) LLMs
+          - Processes terminal errors and applies code fixes
+          
+          Dependencies: $package_info
+          
+          File structure sample:
+          $project_structure"
+          
+          response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $(echo "$arch_prompt" | jq -Rs .)
+                }
+              ],
+              \"model\": \"openai/gpt-4o\"
+            }")
+          
+          architecture_doc=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "# Architecture Documentation\n\nFailed to generate architecture documentation")
+          
+          echo "$architecture_doc" > docs/ARCHITECTURE.md
+          
+          echo "Architecture documentation generated"
+      
+      - name: Update README with AI insights
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read current README
+          current_readme=$(cat README.md 2>/dev/null || echo "# Cloi")
+          
+          readme_prompt="You are improving the README.md for the Cloi project.
+          
+          Please enhance this README with:
+          1. Better project description and value proposition
+          2. Clear installation instructions
+          3. Usage examples with practical scenarios
+          4. Architecture overview (brief)
+          5. Contributing guidelines
+          6. Troubleshooting common issues
+          
+          Keep existing content where it makes sense, but improve clarity and completeness.
+          Make it welcoming for new contributors and users.
+          
+          Current README:
+          $current_readme"
+          
+          response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $(echo "$readme_prompt" | jq -Rs .)
+                }
+              ],
+              \"model\": \"openai/gpt-4o\"
+            }")
+          
+          enhanced_readme=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || cat README.md)
+          
+          echo "$enhanced_readme" > README_enhanced.md
+          
+          echo "Enhanced README generated"
+      
+      - name: Create documentation PR
+        run: |
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Actions AI Documentation"
+          
+          # Create a new branch
+          branch_name="docs/ai-generated-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$branch_name"
+          
+          # Add the generated files
+          git add docs/API.md docs/ARCHITECTURE.md README_enhanced.md
+          
+          # Check if there are changes to commit
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: AI-generated documentation updates
+            
+            - Updated API documentation
+            - Enhanced architecture documentation  
+            - Improved README content
+            
+            🤖 Generated with GitHub Models"
+            
+            git push origin "$branch_name"
+            
+            # Create pull request
+            gh pr create \
+              --title "📚 AI-Generated Documentation Updates" \
+              --body "## AI-Generated Documentation Updates
+            
+            This PR contains documentation improvements generated using GitHub Models:
+            
+            ### Changes
+            - **API.md**: Comprehensive API documentation
+            - **ARCHITECTURE.md**: System architecture overview
+            - **README_enhanced.md**: Enhanced README content
+            
+            ### Review Notes
+            - Please review the generated content for accuracy
+            - Edit or refine any sections as needed
+            - Consider merging useful improvements into existing docs
+            
+            🤖 *Generated using GitHub Models AI assistance*" \
+              --head "$branch_name" \
+              --base main
+          else
+            echo "No documentation changes to commit"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ai-code-comments:
+    name: AI Code Comments Enhancement
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Enhance code comments with AI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Find files that might need better comments
+          files_to_comment=$(find src -name "*.js" -exec grep -L "^\s*//" {} \; | head -5)
+          
+          for file in $files_to_comment; do
+            if [[ -f "$file" ]]; then
+              echo "Adding comments to $file"
+              
+              # Read file content
+              file_content=$(cat "$file")
+              
+              # Skip if file is too large
+              if [[ ${#file_content} -gt 3000 ]]; then
+                continue
+              fi
+              
+              comment_prompt="You are a senior developer adding helpful comments to this JavaScript code.
+              
+              Please add appropriate comments to this code:
+              1. Function descriptions (JSDoc style)
+              2. Complex logic explanations
+              3. Parameter and return value descriptions
+              4. Important implementation notes
+              
+              Return the complete file with added comments. Keep all existing code unchanged, only add comments.
+              
+              File: $file
+              
+              $file_content"
+              
+              response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -d "{
+                  \"messages\": [
+                    {
+                      \"role\": \"user\",
+                      \"content\": $(echo "$comment_prompt" | jq -Rs .)
+                    }
+                  ],
+                  \"model\": \"openai/gpt-4o\"
+                }")
+              
+              commented_code=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null)
+              
+              # Extract just the code part (remove markdown formatting)
+              if [[ "$commented_code" =~ \`\`\`javascript(.+)\`\`\` ]]; then
+                commented_code="${BASH_REMATCH[1]}"
+              elif [[ "$commented_code" =~ \`\`\`(.+)\`\`\` ]]; then
+                commented_code="${BASH_REMATCH[1]}"
+              fi
+              
+              # Write back to file
+              echo "$commented_code" > "${file}.commented"
+              
+              echo "Comments added to $file"
+            fi
+          done

@@ -1,0 +1,318 @@
+name: AI Workflow Optimizer
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI Pipeline", "Security Scanning"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+  issues: write
+
+jobs:
+  analyze-workflow-performance:
+    name: Analyze Workflow Performance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get workflow run data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get recent workflow runs
+          echo "Fetching workflow run data..."
+          
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=20" \
+            > workflow_runs.json
+          
+          # Extract performance data
+          jq -r '.workflow_runs[] | [.workflow_id, .name, .status, .conclusion, .run_started_at, .updated_at] | @csv' workflow_runs.json > performance_data.csv
+          
+          echo "Workflow performance data collected"
+      
+      - name: AI Performance Analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read the performance data
+          performance_data=$(cat performance_data.csv | head -50)
+          
+          analysis_prompt="You are a DevOps engineer analyzing GitHub Actions workflow performance for the Cloi project.
+          
+          Please analyze this workflow performance data and provide:
+          
+          1. **Performance Issues**: Identify slow or frequently failing workflows
+          2. **Optimization Opportunities**: Suggest specific improvements
+          3. **Reliability Concerns**: Point out patterns in failures
+          4. **Cost Optimization**: Recommend ways to reduce CI/CD costs
+          5. **Best Practices**: Suggest workflow improvements
+          
+          Focus on actionable recommendations with specific technical solutions.
+          
+          Performance Data (CSV format: workflow_id,name,status,conclusion,start_time,end_time):
+          $performance_data"
+          
+          response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $(echo "$analysis_prompt" | jq -Rs .)
+                }
+              ],
+              \"model\": \"openai/gpt-4o\"
+            }")
+          
+          analysis_result=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to analyze workflow performance")
+          
+          echo "$analysis_result" > workflow_analysis.md
+          
+          echo "Workflow performance analysis completed"
+      
+      - name: Create optimization issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if there's already an open optimization issue
+          existing_issues=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/issues?labels=workflow-optimization&state=open" | jq length)
+          
+          if [[ "$existing_issues" -eq 0 ]]; then
+            analysis_content=$(cat workflow_analysis.md)
+            
+            issue_body="## 🔧 AI Workflow Performance Analysis
+            
+            This issue was automatically generated based on recent workflow performance data.
+            
+            $analysis_content
+            
+            ### Action Items
+            - [ ] Review performance recommendations
+            - [ ] Implement suggested optimizations
+            - [ ] Monitor improved performance
+            - [ ] Close issue when optimizations are complete
+            
+            ---
+            *This analysis was generated using GitHub Models AI. Please review and implement relevant suggestions.*
+            
+            **Generated on**: $(date -u +%Y-%m-%d)
+            **Workflow runs analyzed**: Last 20 runs"
+            
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues" \
+              -d "{
+                \"title\": \"🔧 AI Workflow Performance Optimization Recommendations\",
+                \"body\": $(echo "$issue_body" | jq -Rs .),
+                \"labels\": [\"workflow-optimization\", \"performance\", \"automated\"]
+              }"
+            
+            echo "Created workflow optimization issue"
+          else
+            echo "Optimization issue already exists, skipping creation"
+          fi
+
+  ai-dependency-analysis:
+    name: AI Dependency Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Analyze dependencies with AI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get package.json and Python requirements
+          npm_deps=$(cat package.json | jq -r '.dependencies')
+          python_deps=$(cat bin/requirements.txt 2>/dev/null || echo "No Python requirements found")
+          
+          # Get outdated packages
+          npm_outdated=$(npm outdated --json 2>/dev/null || echo "{}")
+          
+          dependency_prompt="You are a security and dependency management expert for the Cloi project.
+          
+          Please analyze these dependencies and provide:
+          
+          1. **Security Risks**: Identify potentially risky dependencies
+          2. **Update Recommendations**: Which packages should be updated and why
+          3. **Dependency Cleanup**: Unused or redundant dependencies
+          4. **Alternative Suggestions**: Better alternatives to current dependencies
+          5. **Vulnerability Assessment**: Known security issues
+          6. **Performance Impact**: Heavy dependencies that could be optimized
+          
+          Focus on actionable recommendations for a Node.js CLI tool with Python ML components.
+          
+          NPM Dependencies:
+          $npm_deps
+          
+          Python Dependencies:
+          $python_deps
+          
+          Outdated NPM Packages:
+          $npm_outdated"
+          
+          response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $(echo "$dependency_prompt" | jq -Rs .)
+                }
+              ],
+              \"model\": \"openai/gpt-4o\"
+            }")
+          
+          dependency_analysis=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to analyze dependencies")
+          
+          echo "$dependency_analysis" > dependency_analysis.md
+          
+          echo "Dependency analysis completed"
+      
+      - name: Create dependency optimization PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if there are actual dependency updates to suggest
+          analysis_content=$(cat dependency_analysis.md)
+          
+          # Create a new branch for dependency updates
+          branch_name="deps/ai-analysis-$(date +%Y%m%d)"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Actions AI Dependency Analyzer"
+          git checkout -b "$branch_name"
+          
+          # Add the analysis file
+          mkdir -p .github/dependency-analysis
+          cp dependency_analysis.md ".github/dependency-analysis/analysis-$(date +%Y%m%d).md"
+          git add ".github/dependency-analysis/analysis-$(date +%Y%m%d).md"
+          
+          if ! git diff --staged --quiet; then
+            git commit -m "deps: AI dependency analysis report
+            
+            🤖 Generated dependency analysis and recommendations"
+            
+            git push origin "$branch_name"
+            
+            # Create pull request
+            gh pr create \
+              --title "📦 AI Dependency Analysis Report" \
+              --body "## AI Dependency Analysis
+            
+            This PR contains an AI-generated analysis of our project dependencies.
+            
+            $analysis_content
+            
+            ### Review Checklist
+            - [ ] Review security recommendations
+            - [ ] Evaluate suggested updates
+            - [ ] Test dependency changes
+            - [ ] Update documentation if needed
+            
+            🤖 *Generated using GitHub Models AI assistance*" \
+              --head "$branch_name" \
+              --base main \
+              --label "dependencies,automated"
+            
+            echo "Created dependency analysis PR"
+          else
+            echo "No dependency analysis to commit"
+          fi
+
+  ai-error-pattern-analysis:
+    name: AI Error Pattern Analysis
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Analyze failed workflow logs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the failed workflow run details
+          run_id="${{ github.event.workflow_run.id }}"
+          
+          # Get job logs for the failed run
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/$run_id/jobs" \
+            > failed_jobs.json
+          
+          # Extract error information
+          failed_jobs=$(jq -r '.jobs[] | select(.conclusion == "failure") | [.name, .steps[].conclusion] | @csv' failed_jobs.json)
+          
+          if [[ -n "$failed_jobs" ]]; then
+            error_prompt="You are a DevOps engineer analyzing CI/CD failures for the Cloi project.
+            
+            Please analyze these workflow failures and provide:
+            
+            1. **Root Cause Analysis**: What likely caused the failures
+            2. **Quick Fixes**: Immediate actions to resolve the issues
+            3. **Prevention Strategies**: How to prevent similar failures
+            4. **Monitoring Improvements**: Better ways to catch these issues early
+            5. **Process Improvements**: Workflow or code changes to improve reliability
+            
+            Focus on actionable solutions specific to a Node.js CLI tool with Python ML components.
+            
+            Failed Jobs Data:
+            $failed_jobs
+            
+            Workflow: ${{ github.event.workflow_run.name }}
+            Run ID: $run_id"
+            
+            response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -d "{
+                \"messages\": [
+                  {
+                    \"role\": \"user\",
+                    \"content\": $(echo "$error_prompt" | jq -Rs .)
+                  }
+                ],
+                \"model\": \"openai/gpt-4o\"
+              }")
+            
+            error_analysis=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to analyze errors")
+            
+            # Create an issue for the failure analysis
+            issue_body="## 🚨 AI Workflow Failure Analysis
+            
+            **Failed Workflow**: ${{ github.event.workflow_run.name }}
+            **Run ID**: $run_id
+            **Analysis Date**: $(date -u +%Y-%m-%d)
+            
+            $error_analysis
+            
+            ### Next Steps
+            - [ ] Review root cause analysis
+            - [ ] Implement suggested fixes
+            - [ ] Test workflow stability
+            - [ ] Update monitoring if needed
+            
+            ---
+            *This analysis was generated using GitHub Models AI based on the failed workflow run.*"
+            
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues" \
+              -d "{
+                \"title\": \"🚨 Workflow Failure Analysis: ${{ github.event.workflow_run.name }}\",
+                \"body\": $(echo "$issue_body" | jq -Rs .),
+                \"labels\": [\"workflow-failure\", \"ci/cd\", \"automated\"]
+              }"
+            
+            echo "Created failure analysis issue"
+          fi

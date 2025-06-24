@@ -1,0 +1,288 @@
+name: AI-Powered Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  ai-code-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get changed files
+        id: changed-files
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '\.(js|cjs|mjs|py)$' | head -10)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: AI Code Review for Core Logic
+        if: steps.changed-files.outputs.files != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read changed files and analyze with AI
+          changed_files="${{ steps.changed-files.outputs.files }}"
+          
+          for file in $changed_files; do
+            if [[ -f "$file" ]]; then
+              echo "Analyzing $file..."
+              
+              # Get the diff for this file
+              diff_content=$(git diff ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- "$file")
+              
+              # Skip if diff is too large (>4000 chars to stay within API limits)
+              if [[ ${#diff_content} -gt 4000 ]]; then
+                echo "Skipping $file - diff too large"
+                continue
+              fi
+              
+              # Check if this touches core logic
+              core_logic_check=""
+              if [[ "$file" == src/core/* ]] || [[ "$file" == src/rag/* ]]; then
+                core_logic_check="CRITICAL: This file is part of the core logic. Pay special attention to: 1) Breaking changes 2) Security implications 3) Performance impact 4) API compatibility"
+              fi
+              
+              # Prepare the review prompt
+              review_prompt="You are a senior software engineer reviewing code for the Cloi project - a security-first agentic debugging tool. 
+              
+              $core_logic_check
+              
+              Please review this code change and provide:
+              1. Security considerations (especially for API keys, user input, file access)
+              2. Code quality assessment
+              3. Potential bugs or issues
+              4. Performance implications
+              5. Suggestions for improvement
+              
+              Be concise but thorough. Focus on actionable feedback.
+              
+              File: $file
+              
+              Diff:
+              $diff_content"
+              
+              # Call GitHub Models API
+              response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -d "{
+                  \"messages\": [
+                    {
+                      \"role\": \"user\",
+                      \"content\": $(echo "$review_prompt" | jq -Rs .)
+                    }
+                  ],
+                  \"model\": \"openai/gpt-4o\"
+                }")
+              
+              # Extract the review content
+              review_content=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to get AI review")
+              
+              # Post as PR comment
+              comment_body="## 🤖 AI Code Review for \`$file\`
+
+              $review_content
+
+              ---
+              *This review was generated using GitHub Models. Please use your judgment and consider this as additional input to human review.*"
+              
+              # Create the comment
+              curl -s -X POST \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+                -d "{\"body\": $(echo "$comment_body" | jq -Rs .)}"
+              
+              echo "Posted AI review for $file"
+              
+              # Rate limit protection
+              sleep 2
+            fi
+          done
+
+  ai-security-analysis:
+    name: AI Security Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get security-sensitive files
+        id: security-files
+        run: |
+          # Look for changes in security-sensitive areas
+          SECURITY_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '(apiKeyManager|auth|security|credential|secret|token)' || true)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$SECURITY_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: AI Security Review
+        if: steps.security-files.outputs.files != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          security_files="${{ steps.security-files.outputs.files }}"
+          
+          if [[ -n "$security_files" ]]; then
+            echo "Security-sensitive files detected: $security_files"
+            
+            # Get combined diff for security analysis
+            security_diff=$(git diff ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- $security_files)
+            
+            if [[ ${#security_diff} -gt 3000 ]]; then
+              security_diff=$(echo "$security_diff" | head -c 3000)
+              security_diff="$security_diff... (truncated)"
+            fi
+            
+            security_prompt="You are a cybersecurity expert reviewing code changes for the Cloi project.
+            
+            CRITICAL SECURITY REVIEW NEEDED
+            
+            Please analyze these changes for:
+            1. Credential exposure or hardcoded secrets
+            2. API key handling and storage
+            3. Input validation and sanitization
+            4. Authentication and authorization flaws
+            5. Injection vulnerabilities
+            6. File system access security
+            7. Network request security
+            
+            Provide specific, actionable security recommendations.
+            
+            Changes in security-sensitive files:
+            $security_diff"
+            
+            response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -d "{
+                \"messages\": [
+                  {
+                    \"role\": \"user\",
+                    \"content\": $(echo "$security_prompt" | jq -Rs .)
+                  }
+                ],
+                \"model\": \"openai/gpt-4o\"
+              }")
+            
+            security_review=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to get security review")
+            
+            comment_body="## 🔒 AI Security Analysis
+
+            **⚠️ Security-sensitive files were modified in this PR**
+
+            $security_review
+
+            ### Recommended Actions:
+            - [ ] Manual security review by security team
+            - [ ] Run security tests
+            - [ ] Verify no credentials are exposed
+            - [ ] Check API key handling
+
+            ---
+            *This security analysis was generated using GitHub Models. Manual security review is still required.*"
+            
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -d "{\"body\": $(echo "$comment_body" | jq -Rs .)}"
+          fi
+
+  ai-test-suggestions:
+    name: AI Test Suggestions
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Analyze changes for test coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all changed JavaScript files
+          changed_js_files=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '\.(js|cjs|mjs)$' | grep -v test | head -5)
+          
+          if [[ -n "$changed_js_files" ]]; then
+            echo "Analyzing test coverage for: $changed_js_files"
+            
+            # Read the actual file contents
+            file_contents=""
+            for file in $changed_js_files; do
+              if [[ -f "$file" ]]; then
+                file_content=$(head -c 2000 "$file")
+                file_contents="$file_contents
+
+                File: $file
+                Content:
+                $file_content"
+              fi
+            done
+            
+            test_prompt="You are a test engineering expert for the Cloi project.
+            
+            Please analyze these code changes and suggest:
+            1. Unit tests that should be written
+            2. Integration tests for the CodeBERT service interaction
+            3. Edge cases to test
+            4. Security test scenarios
+            5. Performance test considerations
+            
+            Focus on practical, implementable test suggestions. Consider that this is a CLI tool that interacts with LLMs and processes code.
+            
+            Changed files:
+            $file_contents"
+            
+            response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -d "{
+                \"messages\": [
+                  {
+                    \"role\": \"user\",
+                    \"content\": $(echo "$test_prompt" | jq -Rs .)
+                  }
+                ],
+                \"model\": \"openai/gpt-4o\"
+              }")
+            
+            test_suggestions=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to get test suggestions")
+            
+            comment_body="## 🧪 AI Test Suggestions
+
+            $test_suggestions
+
+            ### Next Steps:
+            - [ ] Implement suggested unit tests
+            - [ ] Add integration tests if applicable
+            - [ ] Consider edge cases mentioned above
+            - [ ] Update test documentation
+
+            ---
+            *These test suggestions were generated using GitHub Models to help improve code coverage.*"
+            
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -d "{\"body\": $(echo "$comment_body" | jq -Rs .)}"
+          fi

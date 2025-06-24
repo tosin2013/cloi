@@ -1,0 +1,330 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  models: read
+
+jobs:
+  # Validate version and prepare release
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_notes: ${{ steps.notes.outputs.release_notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      
+      - name: Generate AI-enhanced release notes
+        id: notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get commit messages and file changes
+          COMMITS=$(git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD)
+          CHANGED_FILES=$(git diff --name-only $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD | head -20)
+          
+          # Generate AI-enhanced release notes
+          release_prompt="You are creating release notes for the Cloi project - a security-first agentic debugging tool.
+          
+          Please create professional release notes based on these commits and file changes:
+          
+          Format the release notes with:
+          1. **What's New** - Major features and improvements
+          2. **Bug Fixes** - Issues resolved
+          3. **Security** - Security-related changes
+          4. **Performance** - Performance improvements
+          5. **Breaking Changes** - If any (mark clearly)
+          6. **Internal** - Developer-facing changes
+          
+          Keep it concise but informative for users.
+          
+          Commits:
+          $COMMITS
+          
+          Changed files:
+          $CHANGED_FILES"
+          
+          response=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $(echo "$release_prompt" | jq -Rs .)
+                }
+              ],
+              \"model\": \"openai/gpt-4o\"
+            }")
+          
+          AI_NOTES=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null || echo "Failed to generate AI release notes")
+          
+          # Fallback to basic notes if AI fails
+          if [[ "$AI_NOTES" == "Failed to generate AI release notes" ]]; then
+            AI_NOTES="$COMMITS"
+          fi
+          
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$AI_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  # Build and test
+  build:
+    name: Build and Test
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: darwin
+          - os: windows-latest
+            platform: win32
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r bin/requirements.txt
+      
+      - name: Update version
+        run: |
+          npm version ${{ needs.prepare-release.outputs.version }} --no-git-tag-version --allow-same-version
+      
+      - name: Run tests
+        run: |
+          npm run test-rag
+          node bin/index.js --version
+      
+      - name: Package application
+        run: |
+          npm pack
+          mkdir -p dist
+          mv *.tgz dist/cloi-${{ needs.prepare-release.outputs.version }}-${{ matrix.platform }}.tgz
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-${{ matrix.platform }}
+          path: dist/
+          retention-days: 7
+
+  # Create GitHub release
+  github-release:
+    name: Create GitHub Release
+    needs: [prepare-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts/
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.prepare-release.outputs.version }}
+          name: Release v${{ needs.prepare-release.outputs.version }}
+          body: |
+            ## What's Changed
+            ${{ needs.prepare-release.outputs.release_notes }}
+            
+            ## Installation
+            
+            ### From NPM
+            ```bash
+            npm install -g cloi@${{ needs.prepare-release.outputs.version }}
+            ```
+            
+            ### From Source
+            ```bash
+            git clone https://github.com/${{ github.repository }}.git
+            cd cloi
+            npm install
+            npm run setup
+            ```
+            
+            ## Requirements
+            - Node.js >= 20
+            - Python >= 3.9
+            - Ollama (optional, for local LLM support)
+            
+            ## Full Changelog
+            https://github.com/${{ github.repository }}/compare/$(git describe --tags --abbrev=0)...v${{ needs.prepare-release.outputs.version }}
+          files: |
+            artifacts/**/*.tgz
+          draft: false
+          prerelease: false
+
+  # Publish to NPM
+  npm-publish:
+    name: Publish to NPM
+    needs: [prepare-release, github-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Update version
+        run: npm version ${{ needs.prepare-release.outputs.version }} --no-git-tag-version --allow-same-version
+      
+      - name: Publish to NPM
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Build Docker image (for future containerization)
+  docker-build:
+    name: Build Docker Image
+    needs: [prepare-release, github-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile << 'EOF'
+          # Multi-stage build for Cloi
+          FROM node:20-alpine AS builder
+          
+          # Install Python and build dependencies
+          RUN apk add --no-cache python3 py3-pip git
+          
+          WORKDIR /app
+          
+          # Copy package files
+          COPY package*.json ./
+          COPY bin/requirements.txt ./bin/
+          
+          # Install dependencies
+          RUN npm ci --production && \
+              pip3 install --no-cache-dir -r bin/requirements.txt
+          
+          # Copy application code
+          COPY . .
+          
+          # Production stage
+          FROM node:20-alpine
+          
+          # Install Python runtime
+          RUN apk add --no-cache python3 py3-pip
+          
+          # Create non-root user
+          RUN addgroup -g 1001 -S cloi && \
+              adduser -S cloi -u 1001 -G cloi
+          
+          WORKDIR /app
+          
+          # Copy from builder
+          COPY --from=builder --chown=cloi:cloi /app /app
+          
+          # Switch to non-root user
+          USER cloi
+          
+          # Expose CodeBERT service port
+          EXPOSE 5001
+          
+          # Set entrypoint
+          ENTRYPOINT ["node", "bin/index.js"]
+          EOF
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ needs.prepare-release.outputs.version }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Update documentation
+  update-docs:
+    name: Update Documentation
+    needs: [prepare-release, npm-publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      
+      - name: Update README with latest version
+        run: |
+          sed -i "s/npm install -g cloi@.*/npm install -g cloi@${{ needs.prepare-release.outputs.version }}/" README.md || true
+      
+      - name: Create PR for documentation updates
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "docs: update version to ${{ needs.prepare-release.outputs.version }}"
+          title: "Update documentation for v${{ needs.prepare-release.outputs.version }}"
+          body: |
+            This PR updates the documentation to reflect the latest release v${{ needs.prepare-release.outputs.version }}.
+            
+            - Updated installation instructions
+            - Updated version references
+          branch: docs/update-version-${{ needs.prepare-release.outputs.version }}
+          delete-branch: true

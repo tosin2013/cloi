@@ -1,0 +1,25 @@
+# CODEOWNERS file for automatic review assignment
+# This helps protect core logic from unintended changes
+
+# Core logic protection - requires review from maintainers
+/src/core/ @maintainers
+/src/core/executor/ @maintainers @backend-team
+/src/core/promptTemplates/ @maintainers @ai-team
+
+# RAG system - critical component
+/src/rag/ @maintainers @ml-team
+/bin/start_codebert_service.py @maintainers @ml-team
+
+# Security-sensitive files
+/src/utils/apiKeyManager.js @maintainers @security-team
+/.github/workflows/security.yml @security-team
+
+# GitHub Actions workflows
+/.github/workflows/ @devops-team
+
+# Documentation
+*.md @documentation-team
+/docs/ @documentation-team
+
+# Default reviewers for everything else
+* @maintainers
