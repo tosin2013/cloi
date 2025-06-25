@@ -55,11 +55,11 @@ jobs:
           cache: 'npm'
       
       - name: Upgrade npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@10.0.0
 
       - name: Install dependencies
         run: |
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
           npm run postinstall:ci
       
       - name: Run ESLint
@@ -120,11 +120,11 @@ jobs:
           cache: 'pip'
       
       - name: Upgrade npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@10.0.0
 
       - name: Install dependencies
         run: |
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
           npm run postinstall:ci
           python -m pip install --upgrade pip
           pip install -r bin/requirements.txt
@@ -160,11 +160,11 @@ jobs:
           cache: 'pip'
       
       - name: Upgrade npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@10.0.0
 
       - name: Install dependencies
         run: |
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
           npm run postinstall:ci
           python -m pip install --upgrade pip
           pip install -r bin/requirements.txt
