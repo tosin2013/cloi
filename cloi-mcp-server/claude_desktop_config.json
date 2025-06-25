@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cloi-development": {
+      "command": "node",
+      "args": ["/Users/tosinakinosho/workspaces/cloi/cloi-mcp-server/src/index.js"],
+      "cwd": "/Users/tosinakinosho/workspaces/cloi/cloi-mcp-server",
+      "env": {
+        "DEBUG": "cloi-mcp",
+        "CLOI_PROJECT_ROOT": "/Users/tosinakinosho/workspaces/cloi"
+      }
+    }
+  }
+}

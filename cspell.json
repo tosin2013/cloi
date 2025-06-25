@@ -1,0 +1,55 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "languageSettings": [
+    {
+      "languageId": "markdown",
+      "allowCompoundWords": true
+    }
+  ],
+  "words": [
+    "Cloi",
+    "CodeBERT",
+    "Ollama",
+    "LLMs",
+    "embeddings",
+    "vectorstore",
+    "dockerfile",
+    "Anthropic",
+    "claude",
+    "sonnet",
+    "opus",
+    "haiku",
+    "npm",
+    "nodejs",
+    "javascript",
+    "typescript",
+    "github",
+    "workflow",
+    "workflows",
+    "eslint",
+    "prettier",
+    "flake8",
+    "isort",
+    "codebase",
+    "onnx",
+    "faiss",
+    "chunking",
+    "tokenizer",
+    "transformers",
+    "huggingface",
+    "pytorch",
+    "cuda",
+    "gpu"
+  ],
+  "ignorePaths": [
+    "node_modules/**",
+    ".git/**",
+    "*.log",
+    "*.json",
+    "*.lock",
+    "dist/**",
+    "build/**",
+    ".cloi/**"
+  ]
+} 

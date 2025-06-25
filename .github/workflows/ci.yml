@@ -153,7 +153,9 @@ jobs:
       
       - name: Install dependencies
         run: |
-          npm ci
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+          python -m pip install --upgrade pip
           pip install -r bin/requirements.txt
       
       - name: Test module loading
@@ -165,7 +167,7 @@ jobs:
       - name: Test setup script exists
         run: |
           test -f bin/cloi-setup.cjs
-          test -f bin/cloi-ollama-setup.js
+          test -f bin/ollama-setup.cjs
 
   # Integration test for CodeBERT service
   test-codebert:
@@ -188,7 +190,9 @@ jobs:
       
       - name: Install dependencies
         run: |
-          npm ci
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+          python -m pip install --upgrade pip
           pip install -r bin/requirements.txt
       
       - name: Start CodeBERT service

@@ -10,7 +10,8 @@
         "cloi-ollama-setup": "bin/ollama-setup.cjs"
     },
     "scripts": {
-        "postinstall": "node bin/cloi-setup.cjs --auto && (pip install -r bin/requirements.txt || pip3 install -r bin/requirements.txt || echo 'Python requirements installation failed - continuing...') && node bin/ollama-setup.cjs",
+        "postinstall": "node bin/cloi-setup.cjs --auto && node bin/ollama-setup.cjs",
+        "postinstall:ci": "node bin/cloi-setup.cjs --auto",
         "dev": "node bin/index.js",
         "dev:setup": "node bin/cloi-setup.cjs",
         "dev:ollama": "node bin/ollama-setup.cjs",
@@ -22,7 +23,10 @@
         "unlink": "npm unlink",
         "clean": "rm -rf node_modules package-lock.json",
         "reinstall": "npm run clean && npm install",
-        "test-rag": "node -e \"import('./src/rag/index.js').then(r => console.log('RAG system loaded successfully'))\""
+        "test-rag": "node -e \"import('./src/rag/index.js').then(r => console.log('RAG system loaded successfully'))\"",
+        "start-codebert": "python3 bin/codebert_service.py --port 5001 &",
+        "stop-codebert": "pkill -f codebert_service.py",
+        "setup": "npm run dev:setup && npm run codebert-setup && npm run dev:ollama"
     },
     "author": "Gabriel Cha, Min Kim",
     "license": "GPL-3.0",

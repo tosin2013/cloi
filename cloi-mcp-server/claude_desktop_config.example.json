@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cloi-development": {
+      "command": "node",
+      "args": ["/absolute/path/to/cloi/cloi-mcp-server/src/index.js"],
+      "cwd": "/absolute/path/to/cloi/cloi-mcp-server",
+      "env": {
+        "DEBUG": "cloi-mcp",
+        "CLOI_PROJECT_ROOT": "/absolute/path/to/cloi"
+      }
+    }
+  }
+}
