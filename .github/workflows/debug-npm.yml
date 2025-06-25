@@ -1,0 +1,81 @@
+name: Debug NPM Issue
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: 20
+
+jobs:
+  test-npm-only:
+    name: Test NPM in Isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Check npm version (default)
+        run: |
+          echo "Default npm version:"
+          npm --version
+          node --version
+      
+      - name: Test npm commands with default version
+        run: |
+          echo "Testing npm ls..."
+          npm ls --depth=0 || echo "npm ls failed"
+          echo "Testing npm ci..."
+          npm ci --dry-run || echo "npm ci dry-run failed"
+        continue-on-error: true
+      
+      - name: Upgrade to npm@10.0.0
+        run: npm install -g npm@10.0.0
+      
+      - name: Check npm version (after upgrade)
+        run: |
+          echo "After upgrade npm version:"
+          npm --version
+      
+      - name: Test npm commands with npm@10.0.0
+        run: |
+          echo "Testing npm ls..."
+          npm ls --depth=0 || echo "npm ls failed"
+          echo "Testing npm ci..."
+          npm ci --dry-run || echo "npm ci dry-run failed"
+        continue-on-error: true
+      
+      - name: Try npm ci for real
+        run: npm ci --ignore-scripts
+        continue-on-error: true
+
+  test-with-python-env:
+    name: Test NPM with Python Environment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+          cache: 'pip'
+      
+      - name: Upgrade npm
+        run: npm install -g npm@10.0.0
+      
+      - name: Test npm ci with Python environment present
+        run: npm ci --ignore-scripts
+        continue-on-error: true 
