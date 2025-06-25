@@ -54,6 +54,19 @@ jobs:
       - name: Try npm ci for real
         run: npm ci --ignore-scripts
         continue-on-error: true
+      
+      - name: Clear npm cache and retry
+        run: |
+          npm cache clean --force
+          npm ci --ignore-scripts
+        continue-on-error: true
+        
+      - name: Test with fresh lockfile
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+        continue-on-error: true
 
   test-with-python-env:
     name: Test NPM with Python Environment
