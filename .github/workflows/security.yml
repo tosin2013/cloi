@@ -28,16 +28,16 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
       
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
+        uses: github/codeql-action/autobuild@v3
       
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{matrix.language}}"
 
@@ -69,7 +69,7 @@ jobs:
         continue-on-error: true
       
       - name: Upload Snyk results to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: snyk.sarif
@@ -93,7 +93,7 @@ jobs:
             --enableExperimental
       
       - name: Upload OWASP results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dependency-check-report
@@ -164,7 +164,7 @@ jobs:
           npm audit --json > npm-audit-report.json || true
       
       - name: Upload audit report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: npm-audit-report
           path: npm-audit-report.json
@@ -191,7 +191,7 @@ jobs:
           safety check -r bin/requirements.txt --json > python-safety-report.json || true
       
       - name: Upload safety report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: python-safety-report
           path: python-safety-report.json
@@ -214,7 +214,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
       
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
