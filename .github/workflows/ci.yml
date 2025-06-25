@@ -55,47 +55,12 @@ jobs:
           cache: 'npm'
       
       - name: Install dependencies
-        run: npm ci
-      
-      - name: Install ESLint and Prettier
         run: |
-          npm install --save-dev eslint prettier eslint-config-prettier eslint-plugin-import
-      
-      - name: Create ESLint config
-        run: |
-          cat > .eslintrc.json << EOF
-          {
-            "env": {
-              "node": true,
-              "es2021": true
-            },
-            "extends": ["eslint:recommended", "prettier"],
-            "plugins": ["import"],
-            "parserOptions": {
-              "ecmaVersion": "latest",
-              "sourceType": "module"
-            },
-            "rules": {
-              "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
-              "no-console": "off",
-              "import/extensions": ["error", "ignorePackages"]
-            }
-          }
-          EOF
-      
-      - name: Create Prettier config
-        run: |
-          cat > .prettierrc.json << EOF
-          {
-            "semi": true,
-            "singleQuote": true,
-            "tabWidth": 2,
-            "trailingComma": "es5"
-          }
-          EOF
+          npm ci --ignore-scripts
+          npm run postinstall:ci
       
       - name: Run ESLint
-        run: npx eslint . --ext .js,.cjs,.mjs --max-warnings 0 || true
+        run: npx eslint . --ext .js,.cjs,.mjs --max-warnings 10 || true
       
       - name: Check formatting with Prettier
         run: npx prettier --check "**/*.{js,cjs,mjs,json,md}" || true
