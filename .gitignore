@@ -35,3 +35,6 @@ Thumbs.db
 githubaction.md
 CLAUDE.md
 mcppromtp.md
+# Test environments
+test_env/
+.pytest_cache/

@@ -1,37 +1,8 @@
-# Dependencies
 node_modules/
-package-lock.json
-
-# Build outputs
-dist/
-build/
-*.tgz
-
-# Caches
-.npm/
-.cache/
-
-# Logs
-*.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-
-# Generated files
-coverage/
-*.min.js
-*.map
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-
-# Temporary files
-*.tmp
-*.temp
+cloi-mcp-server/
+bin/
+*.md
+*.json
+*.yml
+*.yaml
+.git/
