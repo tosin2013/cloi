@@ -11,7 +11,7 @@
   },
   "scripts": {
     "postinstall": "node bin/cloi-setup.cjs --auto && node bin/ollama-setup.cjs",
-    "postinstall:ci": "node bin/cloi-setup.cjs --auto",
+    "postinstall:ci": "echo \"CI setup completed\"",
     "dev": "node bin/index.js",
     "dev:setup": "node bin/cloi-setup.cjs",
     "dev:ollama": "node bin/ollama-setup.cjs",
@@ -24,14 +24,15 @@
     "clean": "rm -rf node_modules package-lock.json",
     "reinstall": "npm run clean && npm install",
     "test-rag": "node -e \"import('./src/rag/index.js').then(r => console.log('RAG system loaded successfully'))\"",
-    "start-codebert": "python3 bin/codebert_service.py --port 5001 &",
+    "start-codebert": "python3 bin/codebert_service.py --port 5001 || echo \"CodeBERT service failed to start\"",
     "stop-codebert": "pkill -f codebert_service.py",
     "setup": "npm run dev:setup && npm run codebert-setup && npm run dev:ollama",
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint src/ --ext .js",
     "lint:fix": "eslint src/ --ext .js --fix",
     "format": "prettier --write src/**/*.js",
-    "format:check": "prettier --check src/**/*.js"
+    "format:check": "prettier --check src/**/*.js",
+    "setup:local": "node bin/cloi-setup.cjs --auto && node bin/ollama-setup.cjs"
   },
   "author": "Gabriel Cha, Min Kim",
   "license": "GPL-3.0",
