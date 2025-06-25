@@ -126,6 +126,8 @@ jobs:
       
       - name: Install dependencies
         run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
           npm ci
           pip install -r bin/requirements.txt
       
@@ -215,7 +217,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       
       - name: Install dependencies
-        run: npm ci
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci
       
       - name: Update version
         run: npm version ${{ needs.prepare-release.outputs.version }} --no-git-tag-version --allow-same-version

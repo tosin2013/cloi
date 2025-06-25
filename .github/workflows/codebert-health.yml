@@ -36,7 +36,10 @@ jobs:
           cache: 'npm'
       
       - name: Install Node dependencies
-        run: npm ci
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci
       
       - name: Start CodeBERT service
         run: |

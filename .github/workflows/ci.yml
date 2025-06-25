@@ -59,6 +59,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
           npm ci --ignore-scripts
           npm run postinstall:ci
       
@@ -124,6 +126,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
           npm ci --ignore-scripts
           npm run postinstall:ci
           python -m pip install --upgrade pip
@@ -164,6 +168,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
           npm ci --ignore-scripts
           npm run postinstall:ci
           python -m pip install --upgrade pip
