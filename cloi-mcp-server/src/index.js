@@ -24,6 +24,7 @@ import { FeatureDevelopmentAssistant } from './assistants/featureDevelopment.js'
 import { TestFailureAnalyzer } from './analyzers/testFailure.js';
 import { DocumentationGenerator } from './generators/documentation.js';
 import { CloiContextBuilder } from './context/contextBuilder.js';
+import { GitHubCLI } from './tools/githubCLI.js';
 
 // Repository configuration discovered from analysis
 const REPO_CONFIG = {
@@ -74,6 +75,7 @@ const featureAssistant = new FeatureDevelopmentAssistant(REPO_CONFIG);
 const testAnalyzer = new TestFailureAnalyzer(REPO_CONFIG);
 const docGenerator = new DocumentationGenerator(REPO_CONFIG);
 const contextBuilder = new CloiContextBuilder();
+const githubCLI = new GitHubCLI();
 
 // Create MCP server
 const server = new Server(
@@ -404,6 +406,31 @@ const tools = [
       },
       required: ["startPoint"]
     }
+  },
+  
+  // GitHub CLI Tool
+  {
+    name: "github_cli_command",
+    description: "Execute GitHub CLI commands for repository management and workflow operations. By default uses CLOI_PROJECT_ROOT as working directory.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "GitHub CLI command to execute (e.g., 'run list', 'run view 12345', 'pr list')"
+        },
+        args: {
+          type: "array",
+          description: "Additional arguments for the command",
+          items: { type: "string" }
+        },
+        repository: {
+          type: "string",
+          description: "Repository in OWNER/REPO format (optional, for commands that support -R flag)"
+        }
+      },
+      required: ["command"]
+    }
   }
 ];
 
@@ -490,6 +517,11 @@ async function handleToolCall(toolName, args) {
         break;
       case "trace_execution_flow":
         result = await contextBuilder.traceFlow(args.startPoint, args.endPoint);
+        break;
+        
+      // GitHub CLI
+      case "github_cli_command":
+        result = await githubCLI.executeCommand(args.command, args.args, args.repository);
         break;
         
       default:
