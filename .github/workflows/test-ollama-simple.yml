@@ -1,0 +1,107 @@
+name: Test Ollama Simple
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  CI: 'true'
+  GITHUB_ACTIONS: 'true'
+
+jobs:
+  test-ollama-simple:
+    name: Simple Ollama Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+      
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          OLLAMA_PID=$!
+          echo "OLLAMA_PID=$OLLAMA_PID" >> $GITHUB_ENV
+          
+          # Wait for Ollama to be ready
+          echo "Waiting for Ollama to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
+              echo "✅ Ollama is ready!"
+              break
+            fi
+            echo "Attempt $i/30: Ollama not ready yet..."
+            sleep 2
+          done
+          
+          # Verify Ollama is running
+          curl -s http://localhost:11434/api/version || (echo "❌ Ollama failed to start" && exit 1)
+      
+      - name: Pull test models
+        run: |
+          echo "🔄 Pulling test models..."
+          
+          # Pull multiple models to ensure at least one is available
+          ollama pull phi3.5:latest &
+          ollama pull llama3.2:1b &
+          
+          # Wait for at least one to complete
+          wait
+          
+          echo "📋 Available models:"
+          ollama list
+      
+      - name: Run Ollama integration tests
+        run: |
+          echo "🧪 Running Cloi Ollama integration tests..."
+          npm test
+      
+      - name: Test direct Ollama connectivity
+        run: |
+          echo "🔍 Testing direct Ollama connectivity..."
+          
+          # List available models
+          echo "Available models:"
+          curl -s http://localhost:11434/api/tags | jq '.models[].name' || echo "No models found"
+          
+          # Test simple generation with any available model
+          AVAILABLE_MODEL=$(curl -s http://localhost:11434/api/tags | jq -r '.models[0].name // empty')
+          
+          if [ -n "$AVAILABLE_MODEL" ]; then
+            echo "Testing generation with model: $AVAILABLE_MODEL"
+            curl -s -X POST http://localhost:11434/api/generate \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"model\": \"$AVAILABLE_MODEL\",
+                \"prompt\": \"Hello, respond with just: OK\",
+                \"stream\": false
+              }" | jq '.response' || echo "Generation test failed"
+          else
+            echo "⚠️  No models available for testing"
+          fi
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up..."
+          if [ -n "$OLLAMA_PID" ]; then
+            kill $OLLAMA_PID 2>/dev/null || true
+          fi
+          pkill -f ollama || true 

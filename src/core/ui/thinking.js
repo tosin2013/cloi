@@ -4,6 +4,25 @@
  * Provides progress indicators and animations for potentially lengthy LLM operations.
  */
 
+// Check if we're in a CI environment or non-interactive terminal
+const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+const isInteractiveTTY = process.stdout.isTTY && !isCI;
+
+/**
+ * Safe wrapper for terminal operations that may not be available in CI
+ */
+function safeTerminalOperation(operation, fallback = () => {}) {
+  if (isInteractiveTTY) {
+    try {
+      return operation();
+    } catch (error) {
+      return fallback();
+    }
+  } else {
+    return fallback();
+  }
+}
+
 /**
  * Starts and manages a terminal spinner animation with changing text phrases.
  * Indicates that a potentially long-running operation (like LLM interaction) is in progress.
@@ -28,28 +47,39 @@ export function startThinking(customPhrases, fixedBottom = false) {
   const startTime = Date.now();
   
   const updateDisplay = () => {
-    if (fixedBottom) {
-      // Save current cursor position
-      process.stdout.write('\x1B[s');
-      // Move to bottom of terminal
-      process.stdout.write('\x1B[999B');
-      // Clear the line
-      process.stdout.clearLine(0);
-      process.stdout.cursorTo(0);
-      process.stdout.write(`${spinner[spinnerFrame]} ${currentPhrase} (${seconds}s)`);
-      // Restore cursor position
-      process.stdout.write('\x1B[u');
+    const message = `${spinner[spinnerFrame]} ${currentPhrase} (${seconds}s)`;
+    
+    if (isInteractiveTTY) {
+      if (fixedBottom) {
+        // Save current cursor position
+        process.stdout.write('\x1B[s');
+        // Move to bottom of terminal
+        process.stdout.write('\x1B[999B');
+        // Clear the line
+        safeTerminalOperation(() => process.stdout.clearLine(0));
+        safeTerminalOperation(() => process.stdout.cursorTo(0));
+        process.stdout.write(message);
+        // Restore cursor position
+        process.stdout.write('\x1B[u');
+      } else {
+        safeTerminalOperation(() => process.stdout.clearLine(0));
+        safeTerminalOperation(() => process.stdout.cursorTo(0));
+        process.stdout.write(message);
+      }
     } else {
-      process.stdout.clearLine(0);
-      process.stdout.cursorTo(0);
-      process.stdout.write(`${spinner[spinnerFrame]} ${currentPhrase} (${seconds}s)`);
+      // In CI environments, just print a simple progress indicator
+      if (seconds % 5 === 0) { // Only print every 5 seconds to avoid spam
+        console.log(`[${new Date().toISOString()}] ${currentPhrase}...`);
+      }
     }
   };
 
   // Spinner animation
   const spinnerInterval = setInterval(() => {
     spinnerFrame = (spinnerFrame + 1) % spinner.length;
-    updateDisplay();
+    if (isInteractiveTTY) {
+      updateDisplay();
+    }
   }, 80);
 
   const tick = () => {
@@ -59,26 +89,35 @@ export function startThinking(customPhrases, fixedBottom = false) {
   };
   tick();
   const id = setInterval(tick, 1000);
+  
   return (skipNewline = false) => {
     clearInterval(id);
     clearInterval(spinnerInterval);
-    if (fixedBottom) {
-      // Save current cursor position
-      process.stdout.write('\x1B[s');
-      // Move to bottom of terminal
-      process.stdout.write('\x1B[999B');
-      // Clear the line
-      process.stdout.clearLine(0);
-      process.stdout.cursorTo(0);
-      // Restore cursor position
-      process.stdout.write('\x1B[u');
+    
+    if (isInteractiveTTY) {
+      if (fixedBottom) {
+        // Save current cursor position
+        safeTerminalOperation(() => process.stdout.write('\x1B[s'));
+        // Move to bottom of terminal
+        process.stdout.write('\x1B[999B');
+        // Clear the line
+        safeTerminalOperation(() => process.stdout.clearLine(0));
+        safeTerminalOperation(() => process.stdout.cursorTo(0));
+        // Restore cursor position
+        safeTerminalOperation(() => process.stdout.write('\x1B[u'));
+      } else {
+        // Clear the line and move cursor to beginning
+        safeTerminalOperation(() => process.stdout.clearLine(0));
+        safeTerminalOperation(() => process.stdout.cursorTo(0));
+        // Only add newline if not skipping it (for streaming)
+        if (!skipNewline) {
+          process.stdout.write('\n');
+        }
+      }
     } else {
-      // Clear the line and move cursor to beginning
-      process.stdout.clearLine(0);
-      process.stdout.cursorTo(0);
-      // Only add newline if not skipping it (for streaming)
+      // In CI, just print completion message
       if (!skipNewline) {
-        process.stdout.write('\n');
+        console.log(`[${new Date().toISOString()}] Analysis completed.`);
       }
     }
   };
