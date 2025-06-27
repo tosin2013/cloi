@@ -340,4 +340,5 @@ jobs:
           if [[ "${{ needs.test-ollama.result }}" == "success" && "${{ needs.test-multiple-models.result }}" == "success" ]]; then
             echo "🎉 All Ollama tests passed! Cloi's Ollama integration is working correctly." >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Some Ollama tests failed. Please check the logs for details." >> $GITHUB_STEP_SUMMARY 
+            echo "⚠️ Some Ollama tests failed. Please check the logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
