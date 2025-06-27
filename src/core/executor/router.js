@@ -100,9 +100,9 @@ export async function ensureModelAvailable(model) {
 export async function getAllAvailableModels(includeRemote = true) {
   const models = [];
   
-  // Always include Ollama models
+  // Always include Ollama models (installed ones)
   try {
-    const ollamaModels = OllamaExecutor.getAvailableModels();
+    const ollamaModels = await OllamaExecutor.readModels();
     models.push(...ollamaModels);
   } catch (error) {
     console.error('Error getting Ollama models:', error.message);
