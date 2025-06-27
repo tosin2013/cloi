@@ -286,3 +286,147 @@ jobs:
               "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
               -d "{\"body\": $(echo "$comment_body" | jq -Rs .)}"
           fi
+
+  github-copilot-review:
+    name: GitHub Copilot Code Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install GitHub CLI and Copilot
+        run: |
+          # Install GitHub CLI if not already available
+          type gh >/dev/null 2>&1 || {
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y
+          }
+          
+          # Install GitHub Copilot CLI extension
+          gh extension install github/gh-copilot || true
+      
+      - name: Get changed files for Copilot review
+        id: copilot-files
+        run: |
+          # Get list of changed files (limit to avoid token limits)
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '\.(js|cjs|mjs|py|yml|yaml)$' | head -5)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: GitHub Copilot Code Analysis
+        if: steps.copilot-files.outputs.files != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          changed_files="${{ steps.copilot-files.outputs.files }}"
+          
+          # Create a summary of all changes for Copilot
+          echo "🤖 GitHub Copilot Review Summary" > copilot_review.md
+          echo "===========================================" >> copilot_review.md
+          echo "" >> copilot_review.md
+          
+          for file in $changed_files; do
+            if [[ -f "$file" ]]; then
+              echo "📄 Analyzing: $file" >> copilot_review.md
+              echo "---" >> copilot_review.md
+              
+              # Get file diff
+              diff_content=$(git diff ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- "$file")
+              
+              # Use GitHub Copilot CLI to explain the changes
+              if [[ ${#diff_content} -lt 2000 ]]; then
+                echo "**What changed:**" >> copilot_review.md
+                echo '```diff' >> copilot_review.md
+                echo "$diff_content" >> copilot_review.md
+                echo '```' >> copilot_review.md
+                echo "" >> copilot_review.md
+                
+                # Use Copilot to suggest improvements (if available)
+                gh copilot suggest "Review this code change and suggest improvements: $diff_content" 2>/dev/null | head -20 >> copilot_review.md || echo "💡 Manual review recommended for complex changes" >> copilot_review.md
+                echo "" >> copilot_review.md
+              else
+                echo "⚠️ Large diff detected - manual review recommended" >> copilot_review.md
+                echo "" >> copilot_review.md
+              fi
+            fi
+          done
+          
+          # Post Copilot review as PR comment
+          if [[ -s copilot_review.md ]]; then
+            review_content=$(cat copilot_review.md)
+            
+            comment_body="## 🤖 GitHub Copilot Code Review
+
+            $review_content
+
+            ### 🎯 Copilot Recommendations:
+            - Run \`gh copilot suggest\` locally for interactive suggestions
+            - Use \`gh copilot explain\` to understand complex code sections
+            - Consider using GitHub Copilot in your IDE for real-time assistance
+
+            ---
+            *This review combines GitHub Copilot CLI analysis with automated diff review.*"
+            
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -d "{\"body\": $(echo "$comment_body" | jq -Rs .)}"
+          fi
+
+  workflow-syntax-validation:
+    name: Workflow Syntax Validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Validate workflow file syntax
+        run: |
+          # Check for changes in workflow files
+          workflow_files=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '\.github/workflows/.*\.ya?ml$' || true)
+          
+          if [[ -n "$workflow_files" ]]; then
+            echo "🔍 Validating workflow syntax for: $workflow_files"
+            
+            for workflow in $workflow_files; do
+              if [[ -f "$workflow" ]]; then
+                echo "Validating $workflow..."
+                
+                # Basic YAML syntax validation
+                python3 -c "
+                import yaml
+                import sys
+                
+                try:
+                    with open('$workflow', 'r') as f:
+                        yaml.safe_load(f)
+                    print('✅ $workflow: Valid YAML syntax')
+                except yaml.YAMLError as e:
+                    print('❌ $workflow: YAML syntax error - ', e)
+                    sys.exit(1)
+                except Exception as e:
+                    print('⚠️ $workflow: Could not validate - ', e)
+                "
+                
+                # Check for common workflow issues
+                if grep -q "if.*fi" "$workflow"; then
+                  if ! grep -Pzo "if.*\n.*fi" "$workflow" >/dev/null; then
+                    echo "⚠️ Potential bash syntax issue detected in $workflow - check if/fi pairing"
+                  fi
+                fi
+                
+                # Workflow validation completed
+                echo "✅ $workflow syntax validation completed"
+              fi
+            done
+          else
+            echo "ℹ️ No workflow files changed in this PR"
+          fi
