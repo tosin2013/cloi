@@ -1,0 +1,193 @@
+name: Validate A2A Protocol Parity
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/cli/**'
+      - 'src/protocols/a2a/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/cli/**'
+      - 'src/protocols/a2a/**'
+
+jobs:
+  validate-a2a-parity:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Extract Interactive Commands
+      id: extract-commands
+      run: |
+        echo "## A2A Protocol Parity Check" >> $GITHUB_STEP_SUMMARY
+        
+        # Extract all interactive commands from CLI
+        INTERACTIVE_COMMANDS=$(grep -o "case '[^']*':" src/cli/*.js | grep "/.*:" | sed "s/.*case '\\([^']*\\)'.*/\\1/" | sort | uniq)
+        
+        echo "### Interactive Commands Found:" >> $GITHUB_STEP_SUMMARY
+        echo "$INTERACTIVE_COMMANDS" | while read cmd; do
+          echo "- $cmd" >> $GITHUB_STEP_SUMMARY
+        done
+        
+        # Save to file for next step
+        echo "$INTERACTIVE_COMMANDS" > interactive_commands.txt
+        
+        COMMAND_COUNT=$(echo "$INTERACTIVE_COMMANDS" | wc -l)
+        echo "Total interactive commands: $COMMAND_COUNT" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Check A2A JSON-RPC Methods
+      run: |
+        echo "### A2A JSON-RPC Methods Found:" >> $GITHUB_STEP_SUMMARY
+        
+        # Extract JSON-RPC methods from A2A server
+        if [ -f "src/protocols/a2a/http-server.js" ]; then
+          A2A_METHODS=$(grep -o "case '[^']*':" src/protocols/a2a/http-server.js | sed "s/.*case '\\([^']*\\)'.*/\\1/" | sort | uniq)
+          echo "$A2A_METHODS" | while read method; do
+            echo "- $method" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          # Save to file
+          echo "$A2A_METHODS" > a2a_methods.txt
+          
+          METHOD_COUNT=$(echo "$A2A_METHODS" | wc -l)
+          echo "Total A2A methods: $METHOD_COUNT" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ A2A HTTP server not found!" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+    
+    - name: Check Command Parity
+      run: |
+        echo "### Command Parity Analysis:" >> $GITHUB_STEP_SUMMARY
+        
+        # Create mapping of interactive commands to expected A2A methods
+        cat > check_parity.js << 'EOF'
+        import fs from 'fs';
+        
+        const interactiveCommands = fs.readFileSync('interactive_commands.txt', 'utf8')
+          .split('\n').filter(Boolean);
+        const a2aMethods = fs.readFileSync('a2a_methods.txt', 'utf8')
+          .split('\n').filter(Boolean);
+        
+        // Define expected mappings
+        const expectedMappings = {
+          '/help': ['system/help', 'info/help'],
+          '/debug': ['debug/analyze', 'message/send'],
+          '/analyze': ['message/send', 'analysis/run'],
+          '/index': ['system/index', 'codebase/index'],
+          '/model': ['config/model', 'system/model'],
+          '/history': ['history/get', 'session/history'],
+          '/environment': ['system/environment', 'info/environment'],
+          '/status': ['system/status', 'info/status'],
+          '/workflow': ['workflow/list', 'workflow/manage'],
+          '/plugins': ['plugins/list', 'system/plugins'],
+          '/session': ['session/get', 'session/manage'],
+          '/config': ['config/get', 'config/set'],
+          '/a2a': ['a2a/status', 'system/a2a'],
+          '/logging': ['logging/setup', 'system/logging']
+        };
+        
+        let missingMethods = [];
+        let foundMethods = [];
+        
+        for (const [cmd, expectedMethods] of Object.entries(expectedMappings)) {
+          const hasAnyMethod = expectedMethods.some(method => 
+            a2aMethods.includes(method) || 
+            a2aMethods.some(m => m.includes(method.split('/')[1]))
+          );
+          
+          if (hasAnyMethod) {
+            foundMethods.push(cmd);
+            console.log(`✅ ${cmd} has A2A equivalent`);
+          } else {
+            missingMethods.push(cmd);
+            console.log(`❌ ${cmd} missing A2A methods: ${expectedMethods.join(', ')}`);
+          }
+        }
+        
+        console.log(`\nParity Summary: ${foundMethods.length}/${Object.keys(expectedMappings).length} commands have A2A equivalents`);
+        
+        if (missingMethods.length > 0) {
+          console.log('\nMISSING A2A METHODS:');
+          missingMethods.forEach(cmd => {
+            console.log(`  ${cmd}: needs ${expectedMappings[cmd].join(' or ')}`);
+          });
+          process.exit(1);
+        }
+        EOF
+        
+        node check_parity.js || {
+          echo "❌ A2A Protocol Parity Rule violated!" >> $GITHUB_STEP_SUMMARY
+          echo "Some interactive commands don't have A2A equivalents" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        
+        echo "✅ A2A Protocol Parity verified!" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Test A2A Server Startup
+      run: |
+        echo "### A2A Server Functionality Test:" >> $GITHUB_STEP_SUMMARY
+        
+        # Test that A2A server can start
+        timeout 30s node -e "
+          import('./src/protocols/a2a/index.js').then(async ({ default: A2A }) => {
+            const server = new A2A({ networking: { port: 9091 } });
+            await server.start();
+            console.log('✅ A2A server started successfully');
+            await server.stop();
+            console.log('✅ A2A server stopped successfully');
+          }).catch(err => {
+            console.log('❌ A2A server failed:', err.message);
+            process.exit(1);
+          });
+        " && echo "✅ A2A server test passed" >> $GITHUB_STEP_SUMMARY || {
+          echo "❌ A2A server test failed" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+    
+    - name: Check Agent Card Completeness
+      run: |
+        echo "### Agent Card Completeness Check:" >> $GITHUB_STEP_SUMMARY
+        
+        # Test agent card endpoint
+        timeout 15s node -e "
+          import('./src/protocols/a2a/index.js').then(async ({ default: A2A }) => {
+            const server = new A2A({ networking: { port: 9092 } });
+            await server.start();
+            
+            const agentCard = server.getAgentCard();
+            
+            // Check required fields
+            const required = ['name', 'description', 'url', 'capabilities', 'skills'];
+            const missing = required.filter(field => !agentCard[field]);
+            
+            if (missing.length > 0) {
+              console.log('❌ Agent card missing fields:', missing.join(', '));
+              process.exit(1);
+            }
+            
+            console.log('✅ Agent card complete');
+            console.log('Skills count:', agentCard.skills?.length || 0);
+            console.log('Capabilities:', Object.keys(agentCard.capabilities || {}));
+            
+            await server.stop();
+          }).catch(err => {
+            console.log('❌ Agent card test failed:', err.message);
+            process.exit(1);
+          });
+        " && echo "✅ Agent card completeness verified" >> $GITHUB_STEP_SUMMARY || {
+          echo "❌ Agent card incomplete" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }

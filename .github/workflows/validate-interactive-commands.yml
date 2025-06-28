@@ -1,0 +1,147 @@
+name: Validate Interactive Commands
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/cli/**'
+      - 'src/ui/**'
+      - 'src/core/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/cli/**'
+      - 'src/ui/**'
+      - 'src/core/**'
+
+jobs:
+  validate-interactive-commands:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Test Interactive Commands
+      id: test-commands
+      run: |
+        echo "## Interactive Command Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "Testing all interactive commands..." >> $GITHUB_STEP_SUMMARY
+        
+        # Create test script inline
+        cat > test-commands.js << 'EOF'
+        import { spawn } from 'child_process';
+        
+        const COMMANDS = ['/help', '/debug', '/analyze', '/index', '/model', '/history', '/environment', '/status', '/workflow', '/plugins', '/session', '/config', '/a2a', '/logging'];
+        
+        async function testCommand(cmd) {
+          return new Promise((resolve) => {
+            const child = spawn('node', ['src/cli/index.js'], {
+              stdio: ['pipe', 'pipe', 'pipe'],
+              timeout: 8000
+            });
+            
+            let hasOutput = false;
+            let hasError = false;
+            let output = '';
+            let error = '';
+            
+            child.stdout.on('data', (data) => {
+              output += data.toString();
+              hasOutput = true;
+            });
+            
+            child.stderr.on('data', (data) => {
+              error += data.toString();
+              hasError = true;
+            });
+            
+            setTimeout(() => {
+              child.stdin.write(cmd + '\n');
+            }, 1000);
+            
+            setTimeout(() => {
+              child.stdin.write('exit\n');
+            }, 3000);
+            
+            child.on('close', (code) => {
+              const success = code === 0 && hasOutput && !error.includes('setRawMode');
+              resolve({ cmd, success, error: error.substring(0, 100) });
+            });
+            
+            setTimeout(() => {
+              child.kill();
+              resolve({ cmd, success: false, error: 'timeout' });
+            }, 10000);
+          });
+        }
+        
+        const results = [];
+        for (const cmd of COMMANDS) {
+          const result = await testCommand(cmd);
+          results.push(result);
+          console.log(result.success ? `✅ ${cmd}` : `❌ ${cmd}: ${result.error}`);
+        }
+        
+        const passed = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        
+        console.log(`\nSUMMARY: ${passed}/${COMMANDS.length} commands working`);
+        
+        if (failed > 0) {
+          console.log('BROKEN COMMANDS:');
+          results.filter(r => !r.success).forEach(r => 
+            console.log(`  ${r.cmd}: ${r.error}`)
+          );
+          process.exit(1);
+        }
+        EOF
+        
+        node test-commands.js || {
+          echo "❌ Interactive commands are broken!" >> $GITHUB_STEP_SUMMARY
+          echo "This violates the Interactive Command Validation Rule" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        
+        echo "✅ All interactive commands are working!" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Update Compatibility Matrix
+      if: success()
+      run: |
+        # Generate/update compatibility matrix
+        echo "# Command Compatibility Matrix" > COMMAND_COMPATIBILITY_MATRIX.md
+        echo "" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "| Command | Interactive CLI | A2A Protocol | Direct CLI Args | Last Tested |" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "|---------|----------------|--------------|-----------------|-------------|" >> COMMAND_COMPATIBILITY_MATRIX.md
+        
+        COMMANDS=("/help" "/debug" "/analyze" "/index" "/model" "/history" "/environment" "/status" "/workflow" "/plugins" "/session" "/config" "/a2a" "/logging")
+        
+        for cmd in "${COMMANDS[@]}"; do
+          echo "| $cmd | ✅ | ⏳ | ⏳ | $(date -I) |" >> COMMAND_COMPATIBILITY_MATRIX.md
+        done
+        
+        echo "" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "## Legend" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "- ✅ Working" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "- ❌ Broken" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "- ⏳ Not tested yet" >> COMMAND_COMPATIBILITY_MATRIX.md
+        echo "- 🚧 In progress" >> COMMAND_COMPATIBILITY_MATRIX.md
+    
+    - name: Commit matrix update
+      if: success()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add COMMAND_COMPATIBILITY_MATRIX.md
+        git diff --staged --quiet || git commit -m "Auto-update: Interactive commands validation passed"
+        git push || echo "No changes to push"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

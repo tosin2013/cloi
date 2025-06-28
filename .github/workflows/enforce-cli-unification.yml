@@ -1,0 +1,112 @@
+name: Enforce CLI Unification Rule
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/cli/**'
+      - 'bin/**'
+      - 'package.json'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/cli/**'
+      - 'bin/**'
+      - 'package.json'
+
+jobs:
+  enforce-cli-unification:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check CLI Entry Points
+      id: check-cli
+      run: |
+        echo "## CLI Unification Rule Enforcement" >> $GITHUB_STEP_SUMMARY
+        
+        # Count CLI files in src/cli/
+        CLI_FILES=$(find src/cli -name "*.js" -type f | wc -l)
+        echo "Found $CLI_FILES CLI files in src/cli/" >> $GITHUB_STEP_SUMMARY
+        
+        # List all CLI files
+        echo "### CLI Files Found:" >> $GITHUB_STEP_SUMMARY
+        find src/cli -name "*.js" -type f | while read file; do
+          echo "- $file" >> $GITHUB_STEP_SUMMARY
+        done
+        
+        # Check for unified CLI
+        if [ -f "src/cli/unified.js" ]; then
+          echo "✅ Found unified CLI entry point" >> $GITHUB_STEP_SUMMARY
+          UNIFIED_EXISTS=true
+        else
+          echo "❌ No unified CLI found" >> $GITHUB_STEP_SUMMARY
+          UNIFIED_EXISTS=false
+        fi
+        
+        # Check package.json main entry
+        MAIN_ENTRY=$(node -p "require('./package.json').main")
+        echo "### Package.json main entry: $MAIN_ENTRY" >> $GITHUB_STEP_SUMMARY
+        
+        # Check bin entries
+        echo "### Binary entries:" >> $GITHUB_STEP_SUMMARY
+        node -p "Object.entries(require('./package.json').bin).map(([k,v]) => '- ' + k + ': ' + v).join('\n')" >> $GITHUB_STEP_SUMMARY
+        
+        # Enforcement logic
+        if [ "$CLI_FILES" -gt 1 ] && [ "$UNIFIED_EXISTS" = false ]; then
+          echo "❌ **VIOLATION**: Multiple CLI files found but no unified entry point!" >> $GITHUB_STEP_SUMMARY
+          echo "According to CLI Unification Rule, there should be only one unified CLI." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Required Actions:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Create src/cli/unified.js combining all CLI functionality" >> $GITHUB_STEP_SUMMARY
+          echo "2. Remove old CLI files after migration" >> $GITHUB_STEP_SUMMARY
+          echo "3. Update bin/index.js to point to unified CLI" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+        
+        if [ "$CLI_FILES" -eq 1 ] || [ "$UNIFIED_EXISTS" = true ]; then
+          echo "✅ CLI Unification Rule compliance verified" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Validate Entry Point Consistency
+      run: |
+        # Check that all entry points are consistent
+        echo "### Entry Point Consistency Check" >> $GITHUB_STEP_SUMMARY
+        
+        # Check if bin/index.js points to the right place
+        BIN_TARGET=$(node -p "
+          const fs = require('fs');
+          const content = fs.readFileSync('bin/index.js', 'utf8');
+          const match = content.match(/import\\s+['\"](.+?)['\"];?/);
+          match ? match[1] : 'not found';
+        ")
+        
+        echo "bin/index.js imports: $BIN_TARGET" >> $GITHUB_STEP_SUMMARY
+        
+        # Verify the target exists
+        if [ -f "$BIN_TARGET" ]; then
+          echo "✅ Entry point target exists" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Entry point target does not exist: $BIN_TARGET" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+    
+    - name: Check for Legacy CLI Patterns
+      run: |
+        echo "### Legacy CLI Pattern Detection" >> $GITHUB_STEP_SUMMARY
+        
+        # Look for multiple yargs configurations
+        YARGS_FILES=$(grep -r "yargs(" src/cli/ --include="*.js" | wc -l)
+        if [ "$YARGS_FILES" -gt 1 ]; then
+          echo "⚠️ Multiple yargs configurations found - consider consolidation" >> $GITHUB_STEP_SUMMARY
+          grep -r "yargs(" src/cli/ --include="*.js" | head -5 >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Look for multiple main functions
+        MAIN_FUNCTIONS=$(grep -r "async function main\|function main" src/cli/ --include="*.js" | wc -l)
+        if [ "$MAIN_FUNCTIONS" -gt 1 ]; then
+          echo "⚠️ Multiple main functions found - consider consolidation" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "Analysis complete" >> $GITHUB_STEP_SUMMARY

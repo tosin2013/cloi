@@ -1,0 +1,154 @@
+name: Cloi Auto-Repair
+on:
+  workflow_run:
+    workflows: ["CI", "Test Workflow Engine"]
+    types: [completed]
+    branches: [main, develop]
+
+jobs:
+  cloi-auto-repair:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Cloi locally
+        run: npm install -g .
+
+      - name: Download failure logs
+        id: download-logs
+        run: |
+          gh run download ${{ github.event.workflow_run.id }} --dir ./failure-logs || true
+          echo "log-dir=./failure-logs" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract failure information
+        id: extract-failure
+        run: |
+          FAILURE_TYPE="test-failure"
+          if [[ "${{ github.event.workflow_run.name }}" == *"build"* ]]; then
+            FAILURE_TYPE="build-failure"
+          elif [[ "${{ github.event.workflow_run.name }}" == *"workflow"* ]]; then
+            FAILURE_TYPE="workflow-failure"
+          fi
+          
+          echo "failure-type=${FAILURE_TYPE}" >> $GITHUB_OUTPUT
+          echo "workflow-name=${{ github.event.workflow_run.name }}" >> $GITHUB_OUTPUT
+          echo "run-url=${{ github.event.workflow_run.html_url }}" >> $GITHUB_OUTPUT
+
+      - name: Run Cloi Auto-Repair Workflow
+        id: auto-repair
+        run: |
+          # Create failure context for Cloi project
+          cat > failure-context.json << EOF
+          {
+            "trigger": "ci-failure",
+            "failureType": "${{ steps.extract-failure.outputs.failure-type }}",
+            "workflowName": "${{ steps.extract-failure.outputs.workflow-name }}",
+            "repository": "tosin2013/cloi",
+            "branch": "${{ github.event.workflow_run.head_branch }}",
+            "commit": "${{ github.event.workflow_run.head_sha }}",
+            "runUrl": "${{ steps.extract-failure.outputs.run-url }}",
+            "createPR": true,
+            "local": false,
+            "projectType": "nodejs",
+            "packageManager": "npm"
+          }
+          EOF
+          
+          # Test our own auto-repair workflow on Cloi
+          echo "🔧 Testing Cloi auto-repair on itself..."
+          cloi workflow auto-repair \
+            --context failure-context.json \
+            --build-log-file ${{ steps.download-logs.outputs.log-dir }} \
+            --create-pr || echo "Auto-repair workflow completed with issues"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if PR was created
+        id: check-pr
+        run: |
+          # Check if auto-repair created a PR
+          if git branch -r | grep -q "origin/auto-fix"; then
+            echo "pr-created=true" >> $GITHUB_OUTPUT
+            PR_URL=$(gh pr list --head auto-fix --json url --jq '.[0].url' || echo "")
+            echo "pr-url=${PR_URL}" >> $GITHUB_OUTPUT
+          else
+            echo "pr-created=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test workflow generation command
+        run: |
+          echo "🤖 Testing dynamic workflow generation..."
+          cloi workflow generate test-failure \
+            --context '{"error": "Test failed in CI", "projectType": "nodejs"}' \
+            --save \
+            --name "generated-test-fix" || echo "Workflow generation test completed"
+
+      - name: Comment on commit with results
+        if: always()
+        run: |
+          if [[ "${{ steps.auto-repair.outcome }}" == "success" ]]; then
+            STATUS_EMOJI="🤖✅"
+            STATUS_TEXT="Auto-repair completed successfully"
+            if [[ "${{ steps.check-pr.outputs.pr-created }}" == "true" ]]; then
+              PR_INFO="**Auto-Repair PR:** ${{ steps.check-pr.outputs.pr-url }}"
+            else
+              PR_INFO="No PR was needed (fixes applied directly or no fixes found)"
+            fi
+          else
+            STATUS_EMOJI="🤖⚠️"
+            STATUS_TEXT="Auto-repair encountered issues"
+            PR_INFO="Check the workflow run for details"
+          fi
+
+          gh api repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/comments \
+            --method POST \
+            --field body="${STATUS_EMOJI} **Cloi Auto-Repair Test Results**
+
+          ${STATUS_TEXT}
+
+          **Failure Details:**
+          - Workflow: ${{ steps.extract-failure.outputs.workflow-name }}
+          - Type: ${{ steps.extract-failure.outputs.failure-type }}
+          - Run: ${{ steps.extract-failure.outputs.run-url }}
+
+          ${PR_INFO}
+
+          This was a test of Cloi's auto-repair capabilities on the Cloi project itself. 🔄
+
+          Generated by [Cloi Auto-Repair](https://github.com/tosin2013/cloi)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: cloi-auto-repair-test-results
+          path: |
+            failure-context.json
+            .cloi/workflow-state/
+            .cloi/workflows/
+          retention-days: 30
