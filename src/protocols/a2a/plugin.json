@@ -1,0 +1,110 @@
+{
+  "name": "a2a-protocol",
+  "version": "1.0.0",
+  "type": "protocols",
+  "description": "Agent2Agent (A2A) protocol implementation for multi-agent coordination, collaboration, and distributed problem-solving across AI systems",
+  "author": "Cloi Core Team",
+  "license": "GPL-3.0",
+  "keywords": ["multi-agent", "coordination", "collaboration", "distributed-ai", "protocol", "agent-communication", "cloi-protocol"],
+  "main": "index.js",
+  "cloi": {
+    "minVersion": "1.0.8",
+    "protocolVersion": "1.0"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "uuid": "^9.0.1",
+    "ajv": "^8.12.0",
+    "jsonschema": "^1.4.1",
+    "node-cron": "^3.0.3"
+  },
+  "capabilities": [
+    "agent-discovery",
+    "message-routing",
+    "task-coordination",
+    "resource-sharing",
+    "collaborative-problem-solving",
+    "consensus-building",
+    "load-balancing",
+    "failure-recovery",
+    "security-authentication",
+    "protocol-negotiation"
+  ],
+  "supportedAgentTypes": [
+    "analyzer", "provider", "coordinator", "specialist", "orchestrator",
+    "validator", "optimizer", "monitor", "reporter", "integrator"
+  ],
+  "supportedCommunicationMethods": [
+    "websocket", "http", "tcp", "udp", "message-queue", "event-stream"
+  ],
+  "supportedCoordinationPatterns": [
+    "master-slave", "peer-to-peer", "hierarchical", "democratic",
+    "auction-based", "consensus", "voting", "leader-election"
+  ],
+  "configuration": {
+    "enabled": true,
+    "networking": {
+      "protocol": "websocket",
+      "port": 9090,
+      "host": "localhost",
+      "maxConnections": 100,
+      "timeoutMs": 30000,
+      "heartbeatInterval": 10000,
+      "reconnectAttempts": 3,
+      "reconnectDelay": 5000
+    },
+    "security": {
+      "enabled": true,
+      "authentication": "token",
+      "encryption": "tls",
+      "trustedAgents": [],
+      "blacklistedAgents": [],
+      "maxMessageSize": "10MB",
+      "rateLimiting": {
+        "enabled": true,
+        "maxMessagesPerSecond": 100,
+        "maxMessagesPerMinute": 1000
+      }
+    },
+    "coordination": {
+      "defaultPattern": "peer-to-peer",
+      "electionTimeout": 15000,
+      "consensusThreshold": 0.6,
+      "taskTimeoutMs": 300000,
+      "maxAgentsPerTask": 10,
+      "loadBalancing": true,
+      "failureRecovery": true
+    },
+    "discovery": {
+      "enabled": true,
+      "broadcastInterval": 30000,
+      "agentTtl": 120000,
+      "capabilities": [],
+      "metadata": {},
+      "announceOnStartup": true
+    },
+    "messaging": {
+      "compression": true,
+      "validateSchema": true,
+      "persistMessages": false,
+      "messageHistory": 1000,
+      "broadcastRetries": 3,
+      "acknowledgmentTimeout": 5000
+    },
+    "monitoring": {
+      "enabled": true,
+      "metricsCollection": true,
+      "performanceTracking": true,
+      "errorReporting": true,
+      "healthChecks": true,
+      "dashboardPort": 9091
+    },
+    "persistence": {
+      "enabled": false,
+      "storage": "memory",
+      "backupInterval": 3600000,
+      "maxHistorySize": "100MB",
+      "cleanupInterval": 86400000
+    }
+  }
+}
