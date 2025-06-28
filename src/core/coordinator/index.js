@@ -45,6 +45,9 @@ export class Coordinator {
         );
       }
 
+      // Initialize state manager with session restoration
+      await stateManager.initialize();
+
       // Discover and load plugins
       await pluginManager.discoverPlugins();
       await this.loadEssentialPlugins();
@@ -397,7 +400,7 @@ export class Coordinator {
   /**
    * Generic analysis fallback
    */
-  async genericAnalysis(errorOutput, context) {
+  async genericAnalysis() {
     return {
       language: 'unknown',
       framework: 'unknown',

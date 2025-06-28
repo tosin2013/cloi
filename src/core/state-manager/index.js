@@ -457,6 +457,252 @@ export class StateManager {
 
     return exportData;
   }
+
+  /**
+   * Save current session state for persistence
+   */
+  async persistCurrentSession() {
+    if (!this.currentSession) {
+      console.log(chalk.yellow('⚠️  No active session to persist'));
+      return null;
+    }
+
+    const persistenceFile = path.join(this.stateDir, 'current-session.json');
+    const persistenceData = {
+      sessionId: this.currentSession.id,
+      timestamp: new Date().toISOString(),
+      version: '1.0'
+    };
+
+    try {
+      fs.writeFileSync(persistenceFile, JSON.stringify(persistenceData, null, 2));
+      console.log(chalk.gray(`💾 Persisted current session: ${this.currentSession.id}`));
+      return persistenceData;
+    } catch (error) {
+      console.log(chalk.red(`❌ Failed to persist session: ${error.message}`));
+      throw error;
+    }
+  }
+
+  /**
+   * Restore the last active session
+   */
+  async restoreSession() {
+    const persistenceFile = path.join(this.stateDir, 'current-session.json');
+    
+    if (!fs.existsSync(persistenceFile)) {
+      console.log(chalk.gray('📂 No previous session to restore'));
+      return null;
+    }
+
+    try {
+      const persistenceData = JSON.parse(fs.readFileSync(persistenceFile, 'utf8'));
+      const sessionData = await this.loadState(STATE_TYPES.SESSION, persistenceData.sessionId);
+      
+      if (!sessionData) {
+        console.log(chalk.yellow('⚠️  Previous session data not found, starting fresh'));
+        // Clean up invalid persistence file
+        fs.unlinkSync(persistenceFile);
+        return null;
+      }
+
+      // Only restore if session was not properly ended
+      if (sessionData.status === 'active') {
+        this.currentSession = sessionData;
+        this.sessionId = sessionData.id;
+        
+        // Restore fix history from session
+        this.fixHistory = [...sessionData.fixes];
+        
+        console.log(chalk.green(`🔄 Restored session: ${sessionData.id}`));
+        console.log(chalk.gray(`   Started: ${sessionData.startTime}`));
+        console.log(chalk.gray(`   Fixes: ${sessionData.fixes.length}, Analyses: ${sessionData.analyses.length}`));
+        
+        return sessionData;
+      } else {
+        console.log(chalk.gray('📂 Previous session was properly ended, starting fresh'));
+        // Clean up completed session persistence
+        fs.unlinkSync(persistenceFile);
+        return null;
+      }
+
+    } catch (error) {
+      console.log(chalk.red(`❌ Failed to restore session: ${error.message}`));
+      // Clean up corrupted persistence file
+      try {
+        fs.unlinkSync(persistenceFile);
+      } catch (unlinkError) {
+        // Ignore unlink errors
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Initialize state manager with session restoration
+   */
+  async initialize() {
+    console.log(chalk.blue('🔄 Initializing State Manager...'));
+    
+    // Ensure state directory exists
+    this.ensureStateDirectory();
+    
+    // Attempt to restore previous session
+    const restored = await this.restoreSession();
+    
+    if (!restored) {
+      console.log(chalk.gray('📝 Ready to start new session'));
+    }
+    
+    // Set up auto-persistence for current session
+    this.setupAutoPersistence();
+    
+    console.log(chalk.green('✅ State Manager initialized'));
+    return restored;
+  }
+
+  /**
+   * Set up automatic session persistence
+   */
+  setupAutoPersistence() {
+    // Persist session every 30 seconds when active
+    this.persistenceInterval = setInterval(async () => {
+      if (this.currentSession && this.currentSession.status === 'active') {
+        try {
+          await this.persistCurrentSession();
+        } catch (error) {
+          // Silently handle persistence errors to avoid spam
+        }
+      }
+    }, 30000);
+
+    // Persist on process exit
+    const gracefulShutdown = async (signal) => {
+      console.log(chalk.yellow(`\n🛑 Received ${signal}, saving session state...`));
+      
+      if (this.persistenceInterval) {
+        clearInterval(this.persistenceInterval);
+      }
+      
+      if (this.currentSession && this.currentSession.status === 'active') {
+        try {
+          await this.persistCurrentSession();
+          console.log(chalk.green('✅ Session state saved'));
+        } catch (error) {
+          console.log(chalk.red(`❌ Failed to save session state: ${error.message}`));
+        }
+      }
+      
+      process.exit(0);
+    };
+
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGUSR1', gracefulShutdown);
+    process.on('SIGUSR2', gracefulShutdown);
+  }
+
+  /**
+   * Clear session persistence
+   */
+  async clearSessionPersistence() {
+    const persistenceFile = path.join(this.stateDir, 'current-session.json');
+    
+    if (fs.existsSync(persistenceFile)) {
+      fs.unlinkSync(persistenceFile);
+      console.log(chalk.gray('🗑️  Cleared session persistence'));
+    }
+
+    if (this.persistenceInterval) {
+      clearInterval(this.persistenceInterval);
+      this.persistenceInterval = null;
+    }
+  }
+
+  /**
+   * Get session recovery info
+   */
+  async getSessionRecoveryInfo() {
+    const persistenceFile = path.join(this.stateDir, 'current-session.json');
+    
+    if (!fs.existsSync(persistenceFile)) {
+      return null;
+    }
+
+    try {
+      const persistenceData = JSON.parse(fs.readFileSync(persistenceFile, 'utf8'));
+      const sessionData = await this.loadState(STATE_TYPES.SESSION, persistenceData.sessionId);
+      
+      if (!sessionData) {
+        return null;
+      }
+
+      return {
+        sessionId: sessionData.id,
+        startTime: sessionData.startTime,
+        status: sessionData.status,
+        fixCount: sessionData.fixes.length,
+        analysisCount: sessionData.analyses.length,
+        canRestore: sessionData.status === 'active'
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Record workflow failure for potential rollback
+   */
+  async recordWorkflowFailure(failureData) {
+    if (!this.currentSession) {
+      await this.startSession();
+    }
+
+    const failureRecord = {
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+      sessionId: this.currentSession.id,
+      type: 'workflow-failure',
+      ...failureData
+    };
+
+    // Add to session
+    if (!this.currentSession.failures) {
+      this.currentSession.failures = [];
+    }
+    this.currentSession.failures.push(failureRecord);
+    
+    await this.saveState(STATE_TYPES.SESSION, this.currentSession.id, this.currentSession);
+    
+    return failureRecord;
+  }
+
+  /**
+   * Record rollback execution
+   */
+  async recordRollback(rollbackData) {
+    if (!this.currentSession) {
+      await this.startSession();
+    }
+
+    const rollbackRecord = {
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+      sessionId: this.currentSession.id,
+      type: 'rollback',
+      ...rollbackData
+    };
+
+    // Add to session
+    if (!this.currentSession.rollbacks) {
+      this.currentSession.rollbacks = [];
+    }
+    this.currentSession.rollbacks.push(rollbackRecord);
+    
+    await this.saveState(STATE_TYPES.SESSION, this.currentSession.id, this.currentSession);
+    
+    return rollbackRecord;
+  }
 }
 
 // Export singleton instance
