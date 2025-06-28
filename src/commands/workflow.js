@@ -10,6 +10,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { workflowEngine } from '../core/workflow-engine/index.js';
 import { environmentContext } from '../core/environment-context/index.js';
+import { DeprecatedActionsRepair } from './fix-deprecated-actions.js';
 
 /**
  * Run a workflow
@@ -376,6 +377,42 @@ export async function generateWorkflow(trigger, context = {}, options = {}) {
 
   } catch (error) {
     console.error(chalk.red('❌ Failed to generate workflow:'), error.message);
+    throw error;
+  }
+}
+
+/**
+ * Fix deprecated GitHub Actions
+ */
+export async function fixDeprecatedActions(options = {}) {
+  try {
+    console.log(chalk.blue('🔧 Running GitHub Actions deprecation repair...'));
+    
+    const repair = new DeprecatedActionsRepair({
+      autoCommit: options.commit || false,
+      createBackup: options.backup !== false
+    });
+
+    const result = await repair.repairDeprecatedActions();
+    
+    if (result.success && result.fixes.length > 0) {
+      console.log(chalk.cyan('\n💡 Auto-repair completed successfully!'));
+      console.log('Next steps:');
+      console.log('  1. Review the changes in .github/workflows/');
+      console.log('  2. Test the workflows in a pull request');
+      console.log('  3. Commit and push the fixes');
+      
+      if (!options.commit) {
+        console.log(chalk.gray('\n  Use --commit to auto-commit these fixes'));
+      }
+    } else if (result.success && result.fixes.length === 0) {
+      console.log(chalk.green('✅ No deprecated actions found - your workflows are up to date!'));
+    }
+
+    return result;
+
+  } catch (error) {
+    console.error(chalk.red('❌ Failed to fix deprecated actions:'), error.message);
     throw error;
   }
 }
