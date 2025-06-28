@@ -8,5 +8,5 @@
  *
  * ----------------------------------------------------------------------------*/
 
-// This file is just a wrapper that loads the modular implementation
-import '../src/cli/index.js';
+// This file loads the unified CLI implementation
+import '../src/cli/unified.js';
