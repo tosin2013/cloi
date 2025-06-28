@@ -48,8 +48,8 @@ jobs:
       - name: Test workflow CLI commands
         run: |
           echo "Testing workflow CLI..."
-          node src/cli/modular.js workflow list || echo "Workflow list command executed"
-          node src/cli/modular.js workflow status || echo "Workflow status command executed"
+          node src/cli/unified.js workflow list || echo "Workflow list command executed"
+          node src/cli/unified.js workflow status || echo "Workflow status command executed"
 
       - name: Test dynamic workflow generation
         run: |

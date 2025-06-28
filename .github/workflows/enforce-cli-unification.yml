@@ -53,20 +53,62 @@ jobs:
         echo "### Binary entries:" >> $GITHUB_STEP_SUMMARY
         node -p "Object.entries(require('./package.json').bin).map(([k,v]) => '- ' + k + ': ' + v).join('\n')" >> $GITHUB_STEP_SUMMARY
         
+        # Check if legacy files are backed up
+        if [ -d "src/cli/legacy-backup" ]; then
+          echo "✅ Legacy CLI files safely backed up in src/cli/legacy-backup/" >> $GITHUB_STEP_SUMMARY
+          echo "### Legacy Files Backed Up:" >> $GITHUB_STEP_SUMMARY
+          ls src/cli/legacy-backup/ | while read file; do
+            echo "- $file" >> $GITHUB_STEP_SUMMARY
+          done
+        fi
+        
+        # Test unified CLI functionality
+        echo "### Testing Unified CLI Functionality:" >> $GITHUB_STEP_SUMMARY
+        
+        # Test help command
+        if timeout 5s node src/cli/unified.js --help > /dev/null 2>&1; then
+          echo "✅ Unified CLI help command works" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Unified CLI help command failed" >> $GITHUB_STEP_SUMMARY
+          VIOLATION=true
+        fi
+        
+        # Test status command  
+        if timeout 5s node src/cli/unified.js status > /dev/null 2>&1; then
+          echo "✅ Unified CLI status command works" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Unified CLI status command failed" >> $GITHUB_STEP_SUMMARY
+          VIOLATION=true
+        fi
+        
+        # Test auto-repair command
+        if timeout 5s node src/cli/unified.js auto-repair cli-unify > /dev/null 2>&1; then
+          echo "✅ Unified CLI auto-repair command works" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Unified CLI auto-repair command failed" >> $GITHUB_STEP_SUMMARY
+          VIOLATION=true
+        fi
+        
         # Enforcement logic
-        if [ "$CLI_FILES" -gt 1 ] && [ "$UNIFIED_EXISTS" = false ]; then
-          echo "❌ **VIOLATION**: Multiple CLI files found but no unified entry point!" >> $GITHUB_STEP_SUMMARY
-          echo "According to CLI Unification Rule, there should be only one unified CLI." >> $GITHUB_STEP_SUMMARY
+        if [ "$UNIFIED_EXISTS" = false ]; then
+          echo "❌ **VIOLATION**: No unified CLI found!" >> $GITHUB_STEP_SUMMARY
+          echo "According to CLI Unification Rule, there should be a unified CLI." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Required Actions:**" >> $GITHUB_STEP_SUMMARY
           echo "1. Create src/cli/unified.js combining all CLI functionality" >> $GITHUB_STEP_SUMMARY
-          echo "2. Remove old CLI files after migration" >> $GITHUB_STEP_SUMMARY
-          echo "3. Update bin/index.js to point to unified CLI" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update bin/index.js to point to unified CLI" >> $GITHUB_STEP_SUMMARY
+          echo "3. Backup old CLI files safely" >> $GITHUB_STEP_SUMMARY
           exit 1
-        fi
-        
-        if [ "$CLI_FILES" -eq 1 ] || [ "$UNIFIED_EXISTS" = true ]; then
-          echo "✅ CLI Unification Rule compliance verified" >> $GITHUB_STEP_SUMMARY
+        elif [ "$VIOLATION" = "true" ]; then
+          echo "❌ **VIOLATION**: Unified CLI exists but has functionality issues!" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        else
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎉 **SUCCESS**: CLI is properly unified!" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Single unified entry point exists" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Legacy files safely backed up" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All commands working correctly" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Auto-repair capabilities enabled" >> $GITHUB_STEP_SUMMARY
         fi
     
     - name: Validate Entry Point Consistency

@@ -77,7 +77,17 @@ jobs:
           
           # Test our own auto-repair workflow on Cloi
           echo "🔧 Testing Cloi auto-repair on itself..."
-          cloi workflow auto-repair \
+          
+          # Test deprecated actions fix
+          echo "Testing deprecated actions auto-repair..."
+          node src/cli/unified.js auto-repair github-actions || echo "No deprecated actions found"
+          
+          # Test CLI unification
+          echo "Testing CLI unification status..."
+          node src/cli/unified.js auto-repair cli-unify || echo "CLI already unified"
+          
+          # Test main auto-repair workflow
+          node src/cli/unified.js workflow auto-repair \
             --context failure-context.json \
             --build-log-file ${{ steps.download-logs.outputs.log-dir }} \
             --create-pr || echo "Auto-repair workflow completed with issues"
@@ -101,7 +111,7 @@ jobs:
       - name: Test workflow generation command
         run: |
           echo "🤖 Testing dynamic workflow generation..."
-          cloi workflow generate test-failure \
+          node src/cli/unified.js workflow generate test-failure \
             --context '{"error": "Test failed in CI", "projectType": "nodejs"}' \
             --save \
             --name "generated-test-fix" || echo "Workflow generation test completed"

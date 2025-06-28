@@ -142,11 +142,11 @@ jobs:
       - name: Test CLI help command
         run: node bin/index.js --help
       
-      - name: Test enhanced CLI help command
-        run: node src/cli/modular.js --help
+      - name: Test unified CLI help command
+        run: node src/cli/unified.js --help
       
-      - name: Test enhanced CLI status
-        run: node src/cli/modular.js status || true
+      - name: Test unified CLI status
+        run: node src/cli/unified.js status || true
       
       - name: Test setup script exists
         run: |

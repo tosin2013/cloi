@@ -168,35 +168,35 @@ jobs:
       - name: Test plugin discovery
         run: |
           echo "Testing plugin discovery..."
-          node src/cli/modular.js plugins list
+          node src/cli/unified.js plugins list
       
       - name: Test JavaScript analyzer plugin
         run: |
           echo "Testing JavaScript analyzer plugin loading..."
-          node src/cli/modular.js plugins load analyzers:javascript
+          node src/cli/unified.js plugins load analyzers:javascript
       
       - name: Test Claude provider plugin
         run: |
           echo "Testing Claude provider plugin loading..."
-          node src/cli/modular.js plugins load providers:claude
+          node src/cli/unified.js plugins load providers:claude
       
-      - name: Test modular analysis system
+      - name: Test unified analysis system
         run: |
-          echo "Testing modular error analysis..."
+          echo "Testing unified error analysis..."
           
           # Test JavaScript syntax error
-          node src/cli/modular.js analyze "SyntaxError: Unexpected token '{'" --files test.js
+          node src/cli/unified.js analyze "SyntaxError: Unexpected token '{'" --files test.js
           
           # Test JavaScript reference error
-          node src/cli/modular.js analyze "ReferenceError: myVariable is not defined" --files app.js --context '{"language":"javascript"}'
+          node src/cli/unified.js analyze "ReferenceError: myVariable is not defined" --files app.js --context '{"language":"javascript"}'
           
           # Test module error
-          node src/cli/modular.js analyze "Error: Cannot find module 'missing-package'" --files index.js
+          node src/cli/unified.js analyze "Error: Cannot find module 'missing-package'" --files index.js
       
       - name: Test system status
         run: |
-          echo "Testing enhanced system status..."
-          node src/cli/modular.js status
+          echo "Testing unified system status..."
+          node src/cli/unified.js status
 
   # Test CLI interface
   test-enhanced-cli:
@@ -222,27 +222,27 @@ jobs:
       
       - name: Test CLI help
         run: |
-          echo "Testing enhanced CLI help..."
-          node src/cli/modular.js --help
+          echo "Testing unified CLI help..."
+          node src/cli/unified.js --help
       
       - name: Test configuration commands
         run: |
           echo "Testing configuration management..."
-          node src/cli/modular.js config show
+          node src/cli/unified.js config show
       
       - name: Test session commands
         run: |
           echo "Testing session management..."
-          node src/cli/modular.js session status || true
-          node src/cli/modular.js session history || true
+          node src/cli/unified.js session status || true
+          node src/cli/unified.js session history || true
       
       - name: Test plugin commands
         run: |
           echo "Testing plugin management commands..."
-          node src/cli/modular.js plugins list
+          node src/cli/unified.js plugins list
           
           # Test that specific plugins are discovered
-          output=$(node src/cli/modular.js plugins list)
+          output=$(node src/cli/unified.js plugins list)
           if echo "$output" | grep -q "javascript"; then
             echo "✅ JavaScript analyzer plugin found"
           else
