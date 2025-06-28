@@ -1,0 +1,81 @@
+name: Upstream Sync
+on:
+  schedule:
+    # Run weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to sync with upstream'
+        required: false
+        default: 'main'
+      strategy:
+        description: 'Merge strategy'
+        required: false
+        default: 'merge'
+        type: choice
+        options:
+          - merge
+          - rebase
+          - squash
+
+jobs:
+  upstream-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Cloi
+        run: npm install -g @cloi/cli
+
+      - name: Check upstream configuration
+        id: check-upstream
+        run: |
+          if git remote | grep -q "upstream"; then
+            echo "has-upstream=true" >> $GITHUB_OUTPUT
+            echo "upstream-url=$(git remote get-url upstream)" >> $GITHUB_OUTPUT
+          else
+            echo "has-upstream=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run upstream sync
+        if: steps.check-upstream.outputs.has-upstream == 'true'
+        run: |
+          cloi workflow upstream-sync \
+            --branch "${{ github.event.inputs.branch || 'main' }}" \
+            --strategy "${{ github.event.inputs.strategy || 'merge' }}" \
+            --create-pr \
+            --run-tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on completion
+        if: steps.check-upstream.outputs.has-upstream == 'true'
+        run: |
+          echo "🔄 Upstream sync completed"
+          echo "Upstream: ${{ steps.check-upstream.outputs.upstream-url }}"
+
+      - name: Notify no upstream
+        if: steps.check-upstream.outputs.has-upstream == 'false'
+        run: |
+          echo "⚠️ No upstream remote configured"
+          echo "To set up upstream sync:"
+          echo "  git remote add upstream <upstream-repo-url>"
+          echo "  gh workflow run upstream-sync.yml"
