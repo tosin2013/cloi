@@ -1,0 +1,95 @@
+{
+  "name": "browser-testing",
+  "version": "1.0.0",
+  "type": "integrations",
+  "description": "Advanced browser testing automation using Playwright with cross-browser support, visual regression testing, and accessibility validation",
+  "author": "Cloi Core Team",
+  "license": "GPL-3.0",
+  "keywords": ["playwright", "browser-testing", "e2e", "visual-regression", "accessibility", "automation", "cloi-plugin"],
+  "main": "index.js",
+  "cloi": {
+    "minVersion": "1.0.8",
+    "pluginVersion": "1.0"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.40.0",
+    "playwright": "^1.40.0",
+    "pixelmatch": "^5.3.0",
+    "pngjs": "^7.0.0"
+  },
+  "capabilities": [
+    "cross-browser-testing",
+    "visual-regression",
+    "accessibility-testing", 
+    "performance-monitoring",
+    "test-generation",
+    "screenshot-comparison",
+    "mobile-testing",
+    "api-testing"
+  ],
+  "configuration": {
+    "enabled": true,
+    "browsers": {
+      "chromium": {
+        "enabled": true,
+        "headless": true,
+        "viewport": { "width": 1920, "height": 1080 },
+        "deviceScaleFactor": 1
+      },
+      "firefox": {
+        "enabled": true,
+        "headless": true,
+        "viewport": { "width": 1920, "height": 1080 }
+      },
+      "webkit": {
+        "enabled": false,
+        "headless": true,
+        "viewport": { "width": 1920, "height": 1080 }
+      }
+    },
+    "testing": {
+      "timeout": 30000,
+      "retries": 2,
+      "parallel": true,
+      "workers": 4,
+      "outputDir": "./test-results",
+      "screenshotDir": "./screenshots",
+      "videoDir": "./videos"
+    },
+    "visual": {
+      "enabled": true,
+      "threshold": 0.2,
+      "updateSnapshots": false,
+      "diffThreshold": 0.3,
+      "animations": "disabled"
+    },
+    "accessibility": {
+      "enabled": true,
+      "standards": ["wcag2a", "wcag2aa", "wcag21aa"],
+      "tags": ["best-practice"],
+      "reportFormat": "json"
+    },
+    "performance": {
+      "enabled": true,
+      "metrics": ["FCP", "LCP", "FID", "CLS", "TTFB"],
+      "thresholds": {
+        "FCP": 1800,
+        "LCP": 2500,
+        "FID": 100,
+        "CLS": 0.1,
+        "TTFB": 800
+      }
+    },
+    "mobile": {
+      "enabled": false,
+      "devices": ["iPhone 13", "Pixel 5", "iPad Pro"],
+      "orientations": ["portrait", "landscape"]
+    },
+    "reports": {
+      "html": true,
+      "json": true,
+      "junit": true,
+      "allure": false
+    }
+  }
+}

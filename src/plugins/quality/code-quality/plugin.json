@@ -1,0 +1,99 @@
+{
+  "name": "code-quality",
+  "version": "1.0.0",
+  "type": "quality",
+  "description": "Advanced code quality management with JavaScript/TypeScript (ESLint, Prettier) and Python (Black, Flake8, Pylint, MyPy) support, plus SonarQube and Snyk integration",
+  "author": "Cloi Core Team",
+  "license": "GPL-3.0",
+  "keywords": ["eslint", "prettier", "black", "flake8", "pylint", "mypy", "sonarqube", "snyk", "code-quality", "linting", "security", "python", "javascript", "cloi-plugin"],
+  "main": "index.js",
+  "cloi": {
+    "minVersion": "1.0.8",
+    "pluginVersion": "1.0"
+  },
+  "dependencies": {
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "sonarjs": "^1.0.0"
+  },
+  "capabilities": [
+    "linting",
+    "formatting", 
+    "security-analysis",
+    "code-metrics",
+    "auto-fix",
+    "reporting"
+  ],
+  "configuration": {
+    "enabled": true,
+    "autoFix": false,
+    "severity": "warning",
+    "tools": {
+      "eslint": {
+        "enabled": true,
+        "configFile": ".eslintrc.js",
+        "extensions": [".js", ".jsx", ".ts", ".tsx"],
+        "rules": {}
+      },
+      "prettier": {
+        "enabled": true,
+        "configFile": ".prettierrc",
+        "extensions": [".js", ".jsx", ".ts", ".tsx", ".json", ".md"],
+        "options": {}
+      },
+      "black": {
+        "enabled": true,
+        "extensions": [".py"],
+        "lineLength": 88,
+        "targetVersions": ["py38", "py39", "py310", "py311"],
+        "options": {}
+      },
+      "flake8": {
+        "enabled": true,
+        "configFile": ".flake8",
+        "extensions": [".py"],
+        "maxLineLength": 88,
+        "ignoreErrors": ["E203", "W503"],
+        "options": {}
+      },
+      "pylint": {
+        "enabled": true,
+        "configFile": ".pylintrc",
+        "extensions": [".py"],
+        "rcfile": "pyproject.toml",
+        "options": {}
+      },
+      "mypy": {
+        "enabled": true,
+        "configFile": "mypy.ini",
+        "extensions": [".py"],
+        "strictMode": false,
+        "ignoreErrors": [],
+        "options": {}
+      },
+      "sonarqube": {
+        "enabled": false,
+        "serverUrl": "",
+        "token": "",
+        "projectKey": ""
+      },
+      "snyk": {
+        "enabled": false,
+        "token": "",
+        "severity": "high"
+      }
+    },
+    "excludePatterns": [
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      "coverage/**",
+      ".git/**"
+    ],
+    "reporting": {
+      "format": "json",
+      "outputFile": "quality-report.json",
+      "includeMetrics": true
+    }
+  }
+}

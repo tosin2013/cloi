@@ -1,0 +1,112 @@
+{
+  "name": "documentation",
+  "version": "1.0.0",
+  "type": "analyzers",
+  "description": "Intelligent documentation management and generation system with coverage analysis, knowledge extraction, and automated documentation workflows",
+  "author": "Cloi Core Team",
+  "license": "GPL-3.0",
+  "keywords": ["documentation-management", "knowledge-extraction", "coverage-analysis", "auto-generation", "markdown", "api-docs", "code-documentation", "cloi-plugin"],
+  "main": "index.js",
+  "cloi": {
+    "minVersion": "1.0.8",
+    "pluginVersion": "1.0"
+  },
+  "dependencies": {
+    "markdown-it": "^14.0.0",
+    "gray-matter": "^4.0.3",
+    "jsdoc": "^4.0.2",
+    "typedoc": "^0.25.4",
+    "sphinx": "^1.0.0",
+    "remark": "^15.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0"
+  },
+  "capabilities": [
+    "documentation-analysis",
+    "coverage-tracking",
+    "auto-generation",
+    "knowledge-extraction",
+    "api-documentation",
+    "code-documentation",
+    "markdown-processing",
+    "content-organization",
+    "link-validation",
+    "template-management",
+    "multi-format-output"
+  ],
+  "supportedFormats": [
+    "markdown", "html", "pdf", "json", "yaml", "rst", "asciidoc",
+    "jsdoc", "typedoc", "sphinx", "gitbook", "docusaurus"
+  ],
+  "supportedDocTypes": [
+    "api", "readme", "changelog", "contributing", "license", "user-guide",
+    "developer-guide", "deployment", "configuration", "troubleshooting",
+    "architecture", "design", "tutorials", "examples"
+  ],
+  "configuration": {
+    "enabled": true,
+    "analysis": {
+      "scanDirectories": ["docs", "documentation", "wiki", "guides"],
+      "includeCodeComments": true,
+      "trackCoverage": true,
+      "validateLinks": true,
+      "analyzeStructure": true,
+      "detectOutdated": true,
+      "extractTodos": true
+    },
+    "generation": {
+      "enabled": true,
+      "autoGenerate": false,
+      "formats": ["markdown", "html"],
+      "templates": {
+        "useCustomTemplates": true,
+        "templateDirectory": "templates/docs",
+        "defaultTemplate": "standard"
+      },
+      "apiDocs": {
+        "enabled": true,
+        "includeFunctions": true,
+        "includeClasses": true,
+        "includeModules": true,
+        "includeTypes": true
+      }
+    },
+    "organization": {
+      "autoOrganize": true,
+      "categoryByType": true,
+      "sortByPriority": true,
+      "createIndexes": true,
+      "linkRelated": true,
+      "suggestStructure": true
+    },
+    "quality": {
+      "checkGrammar": false,
+      "checkSpelling": false,
+      "enforceStyle": true,
+      "requireHeaders": true,
+      "checkCompleteness": true,
+      "validateExamples": true
+    },
+    "integration": {
+      "gitHooks": false,
+      "ciIntegration": false,
+      "slackNotifications": false,
+      "emailNotifications": false,
+      "webhooks": []
+    },
+    "caching": {
+      "enabled": true,
+      "ttl": 7200000,
+      "cacheAnalysis": true,
+      "cacheGeneration": true
+    },
+    "output": {
+      "generateSitemap": true,
+      "createSearchIndex": true,
+      "includeTOC": true,
+      "includeMetadata": true,
+      "responsive": true,
+      "darkMode": true
+    }
+  }
+}

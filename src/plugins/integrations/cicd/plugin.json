@@ -1,0 +1,80 @@
+{
+  "name": "cicd",
+  "version": "1.0.0",
+  "type": "integrations",
+  "description": "Comprehensive CI/CD integration for GitHub Actions, GitLab CI, and Jenkins with workflow management and deployment automation",
+  "author": "Cloi Core Team",
+  "license": "GPL-3.0",
+  "keywords": ["github-actions", "gitlab-ci", "jenkins", "ci-cd", "workflow", "deployment", "automation", "cloi-plugin"],
+  "main": "index.js",
+  "cloi": {
+    "minVersion": "1.0.8",
+    "pluginVersion": "1.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "capabilities": [
+    "workflow-management",
+    "deployment-automation",
+    "pipeline-monitoring",
+    "artifact-management",
+    "status-reporting",
+    "webhook-handling"
+  ],
+  "configuration": {
+    "enabled": true,
+    "defaultPlatform": "github",
+    "platforms": {
+      "github": {
+        "enabled": true,
+        "token": "",
+        "apiUrl": "https://api.github.com",
+        "owner": "",
+        "repo": "",
+        "webhookSecret": ""
+      },
+      "gitlab": {
+        "enabled": false,
+        "token": "",
+        "apiUrl": "https://gitlab.com/api/v4",
+        "projectId": "",
+        "webhookSecret": ""
+      },
+      "jenkins": {
+        "enabled": false,
+        "url": "",
+        "username": "",
+        "apiToken": "",
+        "crumbIssuer": true
+      }
+    },
+    "workflows": {
+      "autoTrigger": false,
+      "triggerOnPush": true,
+      "triggerOnPR": true,
+      "branchPatterns": ["main", "develop", "release/*"],
+      "skipCI": ["[skip ci]", "[ci skip]"]
+    },
+    "quality": {
+      "runQualityChecks": true,
+      "failOnQualityIssues": false,
+      "qualityThresholds": {
+        "errors": 0,
+        "warnings": 10,
+        "coverage": 80
+      }
+    },
+    "notifications": {
+      "slack": {
+        "enabled": false,
+        "webhook": "",
+        "channel": "#deployments"
+      },
+      "email": {
+        "enabled": false,
+        "recipients": []
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "mcp",
+  "version": "1.0.0",
+  "type": "providers",
+  "description": "Model Context Protocol (MCP) provider for integrating with external MCP servers",
+  "author": "Cloi Core Team",
+  "license": "GPL-3.0",
+  "keywords": ["mcp", "model-context-protocol", "ai-provider", "cloi-plugin"],
+  "main": "index.js",
+  "cloi": {
+    "minVersion": "1.0.8",
+    "pluginVersion": "1.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  },
+  "capabilities": [
+    "query",
+    "tools",
+    "resources",
+    "dynamic-context"
+  ],
+  "configuration": {
+    "timeout": 60000,
+    "retries": 3,
+    "servers": {}
+  }
+}
