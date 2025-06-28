@@ -1,0 +1,28 @@
+{
+  "name": "javascript-analyzer",
+  "version": "1.0.0",
+  "description": "JavaScript/Node.js error analyzer with ESLint integration",
+  "type": "analyzer",
+  "main": "index.js",
+  "class": "JavaScriptAnalyzer",
+  "author": "Cloi Core Team",
+  "priority": 80,
+  "supportedExtensions": [".js", ".mjs", ".jsx", ".ts", ".tsx"],
+  "supportedFrameworks": ["node", "react", "vue", "express"],
+  "dependencies": {
+    "eslint": "^8.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "capabilities": {
+    "syntaxAnalysis": true,
+    "linting": true,
+    "typeChecking": true,
+    "frameworkSpecific": true
+  },
+  "config": {
+    "enableESLint": true,
+    "enableTypeScript": true,
+    "maxComplexity": 10,
+    "customRules": {}
+  }
+}

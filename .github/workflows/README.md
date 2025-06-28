@@ -1,21 +1,35 @@
-# GitHub Actions Workflows for Cloi
+# GitHub Actions Workflows for Enhanced Cloi
 
-This directory contains AI-enhanced automated workflows designed to maintain code quality, security, and streamline the release process for the Cloi project. These workflows leverage GitHub Models to provide intelligent code analysis, documentation generation, and optimization recommendations.
+This directory contains comprehensive CI/CD workflows for testing both the legacy Cloi system and the new enhanced modular platform. These workflows leverage AI for code analysis, documentation generation, and provide extensive testing coverage for the plugin-based architecture.
 
 ## Workflows Overview
 
 ### 1. CI Pipeline (`ci.yml`)
 **Trigger**: Push to main/develop, Pull Requests, Manual dispatch
-**Purpose**: Ensures code quality and functionality
+**Purpose**: Ensures code quality and functionality for both legacy and enhanced systems
 
 **Jobs**:
 - **Changes Detection**: Optimizes workflow by detecting which files changed
 - **JavaScript Linting**: ESLint and Prettier checks (auto-configured)
 - **Python Linting**: Black, isort, and flake8 checks
 - **Setup Tests**: Validates installation process across Node.js versions (20, 22, 24)
+  - ✅ **NEW**: Enhanced modular system tests (`npm run test:enhanced`)
+  - ✅ **NEW**: Enhanced CLI help and status commands
 - **CodeBERT Integration Tests**: Ensures the ML service starts and responds correctly
 - **Dependency Checks**: Scans for known vulnerabilities
 - **Documentation Validation**: Checks markdown links and spelling
+
+### 🚀 Enhanced Cloi Tests (`enhanced-cloi.yml`) - **NEW**
+**Trigger**: Changes to modular architecture files (`src/core/**`, `src/plugins/**`, `src/cli/modular.js`)
+**Purpose**: Comprehensive testing of new modular platform
+
+**Test Suites**:
+1. **Modular Architecture**: Core systems (plugin manager, config manager, state manager, coordinator)
+2. **Plugin System**: Plugin discovery, loading, and validation
+3. **Enhanced CLI**: New CLI interface and commands
+4. **Plugin Interfaces**: Interface contracts and validation
+5. **Analysis Accuracy**: Error classification and confidence testing
+6. **Legacy Compatibility**: Ensures backward compatibility
 
 ### 2. Security Scanning (`security.yml`)
 **Trigger**: Push to main/develop, Pull Requests, Weekly schedule, Manual dispatch
@@ -109,11 +123,41 @@ To leverage these workflows effectively, configure branch protection rules:
      - `CI Pipeline / Setup Tests`
    - Require branches to be up to date
 
-## Local Development Setup
+## Enhanced Testing Strategy
 
-To ensure your code passes CI checks locally:
+### Test Coverage for Modular Architecture
+
+**Enhanced Modular Tests** (`/test/enhanced-modular.test.js`):
+- ✅ Core module imports and functionality
+- ✅ Plugin manager discovery and loading
+- ✅ Configuration hierarchy and validation
+- ✅ State management and session tracking
+- ✅ Coordinator integration and error analysis
+- ✅ Plugin interface contracts and validation
+- ✅ JavaScript analyzer accuracy and framework detection
+
+**Legacy Tests** (`/test/ollama.test.js`):
+- ✅ Ollama connectivity and model availability
+- ✅ Basic and JavaScript-specific error analysis
+- ✅ Model compatibility across versions
+
+### Running Tests Locally
 
 ```bash
+# Run all tests (enhanced + legacy)
+npm run test:all
+
+# Run enhanced modular tests only
+npm run test:enhanced
+
+# Run legacy Ollama tests only
+npm run test:ollama
+
+# Test enhanced CLI features
+node src/cli/modular.js status
+node src/cli/modular.js plugins list
+node src/cli/modular.js analyze "SyntaxError: test" --files test.js
+
 # Install development dependencies
 npm install --save-dev eslint prettier eslint-config-prettier eslint-plugin-import
 
@@ -127,9 +171,22 @@ npx eslint . --ext .js,.cjs,.mjs
 black --check bin/
 flake8 bin/ --max-line-length=88 --extend-ignore=E203
 
-# Run tests
+# Run legacy tests
 npm run test-rag
 ```
+
+### Quality Gates
+
+**For Enhanced Features:**
+- All modular architecture tests must pass
+- Plugin interface validation must succeed
+- Configuration validation must pass
+- Legacy compatibility must be maintained
+
+**Test Execution Strategy:**
+1. **Fast Feedback** (5-10 min): Enhanced tests run on modular changes
+2. **Comprehensive** (10-15 min): Main CI tests all functionality
+3. **Integration** (20-30 min): Ollama tests with actual LLM integration
 
 ## Workflow Customization
 

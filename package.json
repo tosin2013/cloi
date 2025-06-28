@@ -6,6 +6,7 @@
   "type": "module",
   "bin": {
     "cloi": "bin/index.js",
+    "cloi-enhanced": "src/cli/modular.js",
     "cloi-setup": "bin/cloi-setup.cjs",
     "cloi-ollama-setup": "bin/ollama-setup.cjs"
   },
@@ -29,6 +30,8 @@
     "setup": "npm run dev:setup && npm run codebert-setup && npm run dev:ollama",
     "test": "node test/ollama.test.js",
     "test:ollama": "node test/ollama.test.js",
+    "test:enhanced": "node test/enhanced-modular.test.js",
+    "test:all": "npm run test:enhanced && npm run test:ollama",
     "lint": "eslint src/ --ext .js",
     "lint:fix": "eslint src/ --ext .js --fix",
     "format": "prettier --write src/**/*.js",
@@ -43,6 +46,8 @@
     "boxen": "^8.0.1",
     "chalk": "^5.4.1",
     "faiss-node": "^0.5.1",
+    "js-yaml": "^4.1.0",
+    "lodash-es": "^4.17.21",
     "ollama": "0.5.15",
     "seedrandom": "^3.0.5",
     "yargs": "^17.7.2"

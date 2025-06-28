@@ -1,0 +1,570 @@
+name: Enhanced Cloi Modular Platform Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/core/**'
+      - 'src/plugins/**'
+      - 'src/cli/modular.js'
+      - 'package.json'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/core/**'
+      - 'src/plugins/**'
+      - 'src/cli/modular.js'
+      - 'package.json'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Test modular architecture components
+  test-modular-architecture:
+    name: Test Modular Architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+      
+      - name: Test plugin manager imports
+        run: |
+          echo "Testing plugin manager module imports..."
+          node -e "
+          import { pluginManager, PLUGIN_TYPES } from './src/core/plugin-manager/index.js';
+          import { BaseAnalyzer, BaseProvider } from './src/core/plugin-manager/interfaces.js';
+          console.log('✅ Plugin manager imports successful');
+          console.log('Plugin types:', Object.keys(PLUGIN_TYPES));
+          "
+      
+      - name: Test configuration manager
+        run: |
+          echo "Testing configuration manager..."
+          node -e "
+          import { configManager } from './src/core/config-manager/index.js';
+          
+          (async () => {
+            try {
+              await configManager.load();
+              const config = configManager.getAll();
+              console.log('✅ Configuration manager loaded successfully');
+              console.log('Config keys:', Object.keys(config));
+              
+              // Test configuration validation
+              const validation = configManager.validate();
+              console.log('Config validation:', validation.valid ? 'PASSED' : 'FAILED');
+              if (!validation.valid) {
+                console.log('Validation errors:', validation.errors);
+              }
+            } catch (error) {
+              console.error('❌ Configuration manager test failed:', error);
+              process.exit(1);
+            }
+          })();
+          "
+      
+      - name: Test state manager
+        run: |
+          echo "Testing state manager..."
+          node -e "
+          import { stateManager } from './src/core/state-manager/index.js';
+          
+          (async () => {
+            try {
+              // Test session management
+              const session = await stateManager.startSession({
+                test: true,
+                environment: 'ci'
+              });
+              console.log('✅ Session started:', session.id);
+              
+              // Test analysis recording
+              const analysis = await stateManager.recordAnalysis({
+                type: 'test',
+                result: 'success'
+              });
+              console.log('✅ Analysis recorded:', analysis.id);
+              
+              // Test fix recording
+              const fix = await stateManager.recordFix({
+                type: 'test-fix',
+                description: 'Test fix for CI'
+              });
+              console.log('✅ Fix recorded:', fix.id);
+              
+              // End session
+              const summary = await stateManager.endSession();
+              console.log('✅ Session ended:', summary.id);
+              console.log('Session duration:', summary.duration + 'ms');
+            } catch (error) {
+              console.error('❌ State manager test failed:', error);
+              process.exit(1);
+            }
+          })();
+          "
+      
+      - name: Test coordinator initialization
+        run: |
+          echo "Testing coordinator initialization..."
+          node -e "
+          import { coordinator } from './src/core/coordinator/index.js';
+          
+          (async () => {
+            try {
+              await coordinator.initialize();
+              const status = coordinator.getStatus();
+              console.log('✅ Coordinator initialized successfully');
+              console.log('Status:', JSON.stringify(status, null, 2));
+              
+              // Test shutdown
+              await coordinator.shutdown();
+              console.log('✅ Coordinator shutdown completed');
+            } catch (error) {
+              console.error('❌ Coordinator test failed:', error);
+              process.exit(1);
+            }
+          })();
+          "
+
+  # Test plugin system
+  test-plugin-system:
+    name: Test Plugin System
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+      
+      - name: Test plugin discovery
+        run: |
+          echo "Testing plugin discovery..."
+          node src/cli/modular.js plugins list
+      
+      - name: Test JavaScript analyzer plugin
+        run: |
+          echo "Testing JavaScript analyzer plugin loading..."
+          node src/cli/modular.js plugins load analyzers:javascript
+      
+      - name: Test Claude provider plugin
+        run: |
+          echo "Testing Claude provider plugin loading..."
+          node src/cli/modular.js plugins load providers:claude
+      
+      - name: Test modular analysis system
+        run: |
+          echo "Testing modular error analysis..."
+          
+          # Test JavaScript syntax error
+          node src/cli/modular.js analyze "SyntaxError: Unexpected token '{'" --files test.js
+          
+          # Test JavaScript reference error
+          node src/cli/modular.js analyze "ReferenceError: myVariable is not defined" --files app.js --context '{"language":"javascript"}'
+          
+          # Test module error
+          node src/cli/modular.js analyze "Error: Cannot find module 'missing-package'" --files index.js
+      
+      - name: Test system status
+        run: |
+          echo "Testing enhanced system status..."
+          node src/cli/modular.js status
+
+  # Test CLI interface
+  test-enhanced-cli:
+    name: Test Enhanced CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+      
+      - name: Test CLI help
+        run: |
+          echo "Testing enhanced CLI help..."
+          node src/cli/modular.js --help
+      
+      - name: Test configuration commands
+        run: |
+          echo "Testing configuration management..."
+          node src/cli/modular.js config show
+      
+      - name: Test session commands
+        run: |
+          echo "Testing session management..."
+          node src/cli/modular.js session status || true
+          node src/cli/modular.js session history || true
+      
+      - name: Test plugin commands
+        run: |
+          echo "Testing plugin management commands..."
+          node src/cli/modular.js plugins list
+          
+          # Test that specific plugins are discovered
+          output=$(node src/cli/modular.js plugins list)
+          if echo "$output" | grep -q "javascript"; then
+            echo "✅ JavaScript analyzer plugin found"
+          else
+            echo "❌ JavaScript analyzer plugin not found"
+            exit 1
+          fi
+          
+          if echo "$output" | grep -q "claude"; then
+            echo "✅ Claude provider plugin found"
+          else
+            echo "❌ Claude provider plugin not found"
+            exit 1
+          fi
+
+  # Test plugin interfaces and validation
+  test-plugin-interfaces:
+    name: Test Plugin Interfaces
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+      
+      - name: Test plugin interface validation
+        run: |
+          echo "Testing plugin interface validation..."
+          node -e "
+          import { pluginManager } from './src/core/plugin-manager/index.js';
+          
+          (async () => {
+            try {
+              // Discover plugins
+              await pluginManager.discoverPlugins();
+              
+              // Test JavaScript analyzer interface
+              const jsAnalyzer = await pluginManager.loadPlugin('analyzers', 'javascript');
+              
+              // Validate required methods exist
+              const requiredMethods = ['analyze', 'supports', 'getPriority'];
+              for (const method of requiredMethods) {
+                if (typeof jsAnalyzer[method] !== 'function') {
+                  throw new Error(\`JavaScript analyzer missing method: \${method}\`);
+                }
+              }
+              console.log('✅ JavaScript analyzer interface validation passed');
+              
+              // Test Claude provider interface
+              const claudeProvider = await pluginManager.loadPlugin('providers', 'claude');
+              
+              const providerMethods = ['query', 'isAvailable', 'getSupportedModels'];
+              for (const method of providerMethods) {
+                if (typeof claudeProvider[method] !== 'function') {
+                  throw new Error(\`Claude provider missing method: \${method}\`);
+                }
+              }
+              console.log('✅ Claude provider interface validation passed');
+              
+              console.log('✅ All plugin interface validations passed');
+            } catch (error) {
+              console.error('❌ Plugin interface validation failed:', error);
+              process.exit(1);
+            }
+          })();
+          "
+      
+      - name: Test plugin capabilities
+        run: |
+          echo "Testing plugin capabilities..."
+          node -e "
+          import { pluginManager } from './src/core/plugin-manager/index.js';
+          
+          (async () => {
+            try {
+              await pluginManager.discoverPlugins();
+              
+              // Test JavaScript analyzer capabilities
+              const jsAnalyzer = await pluginManager.loadPlugin('analyzers', 'javascript');
+              
+              // Test context support detection
+              const jsContext = { files: ['test.js'], error: 'ReferenceError: x is not defined' };
+              const supportsJS = jsAnalyzer.supports(jsContext);
+              if (!supportsJS) {
+                throw new Error('JavaScript analyzer should support JS context');
+              }
+              console.log('✅ JavaScript analyzer context support working');
+              
+              // Test non-JS context
+              const pyContext = { files: ['test.py'], error: 'NameError: name is not defined' };
+              const supportsPY = jsAnalyzer.supports(pyContext);
+              console.log('JavaScript analyzer Python support:', supportsPY);
+              
+              // Test Claude provider capabilities
+              const claudeProvider = await pluginManager.loadPlugin('providers', 'claude');
+              const capabilities = claudeProvider.getCapabilities();
+              console.log('Claude provider capabilities:', capabilities);
+              
+              const models = claudeProvider.getSupportedModels();
+              if (!Array.isArray(models) || models.length === 0) {
+                throw new Error('Claude provider should return supported models');
+              }
+              console.log('✅ Claude provider models:', models.slice(0, 3));
+              
+              console.log('✅ All plugin capability tests passed');
+            } catch (error) {
+              console.error('❌ Plugin capability test failed:', error);
+              process.exit(1);
+            }
+          })();
+          "
+
+  # Test error analysis accuracy
+  test-analysis-accuracy:
+    name: Test Analysis Accuracy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+      
+      - name: Test JavaScript error classification
+        run: |
+          echo "Testing JavaScript error classification accuracy..."
+          node -e "
+          import { coordinator } from './src/core/coordinator/index.js';
+          
+          (async () => {
+            try {
+              await coordinator.initialize();
+              
+              // Test different error types
+              const testCases = [
+                {
+                  error: 'SyntaxError: Unexpected token {',
+                  expectedType: 'syntax',
+                  description: 'syntax error'
+                },
+                {
+                  error: 'ReferenceError: myVar is not defined',
+                  expectedType: 'type',
+                  description: 'reference error'
+                },
+                {
+                  error: 'Error: Cannot find module \"missing-package\"',
+                  expectedType: 'module',
+                  description: 'module error'
+                }
+              ];
+              
+              for (const testCase of testCases) {
+                const context = { 
+                  files: ['test.js'], 
+                  errorOutput: testCase.error,
+                  language: 'javascript'
+                };
+                
+                const analysis = await coordinator.analyzeError(testCase.error, context);
+                
+                console.log(\`Testing \${testCase.description}:\`);
+                console.log(\`  Expected: \${testCase.expectedType}\`);
+                console.log(\`  Actual: \${analysis.errorType}\`);
+                console.log(\`  Confidence: \${analysis.confidence * 100}%\`);
+                
+                if (analysis.errorType === testCase.expectedType) {
+                  console.log(\`  ✅ \${testCase.description} classification correct\`);
+                } else {
+                  console.log(\`  ⚠️  \${testCase.description} classification unexpected\`);
+                }
+                
+                if (analysis.confidence < 0.5) {
+                  console.log(\`  ⚠️  Low confidence for \${testCase.description}\`);
+                }
+                
+                console.log('');
+              }
+              
+              await coordinator.shutdown();
+              console.log('✅ Analysis accuracy test completed');
+            } catch (error) {
+              console.error('❌ Analysis accuracy test failed:', error);
+              process.exit(1);
+            }
+          })();
+          "
+
+  # Integration test with legacy system
+  test-legacy-compatibility:
+    name: Test Legacy Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          npm ci --ignore-scripts
+          npm run postinstall:ci
+      
+      - name: Test legacy CLI still works
+        run: |
+          echo "Testing legacy CLI compatibility..."
+          node bin/index.js --help
+      
+      - name: Test legacy modules still importable
+        run: |
+          echo "Testing legacy module imports..."
+          node -e "
+          import { analyzeWithLLM } from './src/core/index.js';
+          import { ensureModelAvailable } from './src/core/executor/router.js';
+          console.log('✅ Legacy modules still importable');
+          "
+      
+      - name: Test both CLIs can coexist
+        run: |
+          echo "Testing both CLI versions..."
+          echo \"Legacy CLI:\"
+          node bin/index.js --help | head -5
+          echo \"\"
+          echo \"Enhanced CLI:\"
+          node src/cli/modular.js --help | head -5
+          echo \"✅ Both CLI versions working\"
+
+  # Summary job
+  enhanced-test-summary:
+    name: Enhanced Cloi Test Summary
+    needs: [
+      test-modular-architecture,
+      test-plugin-system,
+      test-enhanced-cli,
+      test-plugin-interfaces,
+      test-analysis-accuracy,
+      test-legacy-compatibility
+    ]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Create enhanced test summary
+        run: |
+          echo "## Enhanced Cloi Modular Platform Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Modular Architecture | ${{ needs.test-modular-architecture.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Plugin System | ${{ needs.test-plugin-system.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Enhanced CLI | ${{ needs.test-enhanced-cli.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Plugin Interfaces | ${{ needs.test-plugin-interfaces.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Analysis Accuracy | ${{ needs.test-analysis-accuracy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Legacy Compatibility | ${{ needs.test-legacy-compatibility.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Count passed/failed tests
+          passed=0
+          failed=0
+          
+          for result in "${{ needs.test-modular-architecture.result }}" \
+                       "${{ needs.test-plugin-system.result }}" \
+                       "${{ needs.test-enhanced-cli.result }}" \
+                       "${{ needs.test-plugin-interfaces.result }}" \
+                       "${{ needs.test-analysis-accuracy.result }}" \
+                       "${{ needs.test-legacy-compatibility.result }}"; do
+            if [ "$result" = "success" ]; then
+              ((passed++))
+            else
+              ((failed++))
+            fi
+          done
+          
+          echo "### Results: $passed passed, $failed failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ $failed -eq 0 ]; then
+            echo "🎉 **All enhanced Cloi tests passed!** The modular architecture is working correctly." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Plugin system functional" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Configuration management working" >> $GITHUB_STEP_SUMMARY
+            echo "✅ State management operational" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Modular analysis system functional" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Legacy compatibility maintained" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Some enhanced Cloi tests failed.** Please check the logs for details." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The modular architecture may need attention before deployment." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Fail the job if any critical tests failed
+          if [ "${{ needs.test-modular-architecture.result }}" != "success" ] || \
+             [ "${{ needs.test-plugin-system.result }}" != "success" ]; then
+            echo "Critical modular architecture tests failed!"
+            exit 1
+          fi

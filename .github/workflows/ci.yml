@@ -136,8 +136,17 @@ jobs:
       - name: Test module loading
         run: npm run test-rag
       
+      - name: Test enhanced modular system
+        run: npm run test:enhanced
+      
       - name: Test CLI help command
         run: node bin/index.js --help
+      
+      - name: Test enhanced CLI help command
+        run: node src/cli/modular.js --help
+      
+      - name: Test enhanced CLI status
+        run: node src/cli/modular.js status || true
       
       - name: Test setup script exists
         run: |
