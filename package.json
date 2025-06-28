@@ -6,7 +6,6 @@
   "type": "module",
   "bin": {
     "cloi": "bin/index.js",
-    "cloi-enhanced": "src/cli/modular.js",
     "cloi-setup": "bin/cloi-setup.cjs",
     "cloi-ollama-setup": "bin/ollama-setup.cjs"
   },
@@ -43,13 +42,19 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
     "@huggingface/transformers": "^3.0.2",
+    "ajv": "^8.17.1",
     "boxen": "^8.0.1",
     "chalk": "^5.4.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "faiss-node": "^0.5.1",
     "js-yaml": "^4.1.0",
     "lodash-es": "^4.17.21",
+    "node-cron": "^4.1.1",
     "ollama": "0.5.15",
     "seedrandom": "^3.0.5",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.3",
     "yargs": "^17.7.2"
   },
   "engines": {
