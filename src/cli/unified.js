@@ -306,17 +306,24 @@ async function main() {
     })
 
     .help()
-    .demandCommand(1, 'You need to specify a command')
     .example('$0 debug', 'Auto-fix the last command')
     .example('$0 analyze "Error: Module not found"', 'Analyze an error')
     .example('$0 workflow run auto-repair', 'Run auto-repair workflow')
     .example('$0 --interactive', 'Start interactive mode')
-    .argv;
+    .strict()
+    .parseAsync();
 
-  // If no command specified or interactive flag, start interactive mode
-  if (argv.interactive || argv._.length === 0) {
-    const initialModel = argv.model || await getDefaultModel();
-    await interactiveLoop(null, argv.limit, initialModel);
+  // Handle the parsed arguments
+  try {
+    // If interactive flag or no command given, start interactive mode
+    if (argv.interactive) {
+      const initialModel = argv.model || await getDefaultModel();
+      await interactiveLoop(null, argv.limit, initialModel);
+    }
+  } catch (error) {
+    // Handle any parsing or execution errors
+    console.error(chalk.red('CLI Error:'), error.message);
+    process.exit(1);
   }
 }
 
