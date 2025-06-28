@@ -95,7 +95,10 @@ export function ensureCleanStdin() {
     rl = null;
   }
   cleanupAllListeners();
-  process.stdin.setRawMode(false);
+  // Check if setRawMode is available (not available in all environments)
+  if (process.stdin.setRawMode && typeof process.stdin.setRawMode === 'function') {
+    process.stdin.setRawMode(false);
+  }
   process.stdin.pause();
   while (process.stdin.read() !== null) { /* flush */ }
 }
@@ -219,10 +222,19 @@ export function makePicker(items, title = 'Picker') {
         if (key.name === 'escape' || str === 'q') { cleanup(); resolve(null); }
       };
   
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      readline.emitKeypressEvents(process.stdin);
-      addListener('keypress', onKey);
+      // Check if setRawMode is available before using it
+      if (process.stdin.setRawMode && typeof process.stdin.setRawMode === 'function') {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        readline.emitKeypressEvents(process.stdin);
+        addListener('keypress', onKey);
+      } else {
+        // Fallback: can't use interactive picker in this environment
+        cleanup();
+        console.log(chalk.yellow('Interactive mode not available in this environment.'));
+        console.log(chalk.gray('Please use a different terminal or run with explicit options.'));
+        resolve(null);
+      }
     });
   };
 }
@@ -384,10 +396,19 @@ export function makeSegmentedPicker(items, modelMapping, title = 'Picker') {
         }
       };
   
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      readline.emitKeypressEvents(process.stdin);
-      addListener('keypress', onKey);
+      // Check if setRawMode is available before using it
+      if (process.stdin.setRawMode && typeof process.stdin.setRawMode === 'function') {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        readline.emitKeypressEvents(process.stdin);
+        addListener('keypress', onKey);
+      } else {
+        // Fallback: can't use interactive picker in this environment
+        cleanup();
+        console.log(chalk.yellow('Interactive mode not available in this environment.'));
+        console.log(chalk.gray('Please use a different terminal or run with explicit options.'));
+        resolve(null);
+      }
     });
   };
 } 

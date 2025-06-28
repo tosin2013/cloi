@@ -24,7 +24,7 @@ import path, { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+// import { execSync } from 'child_process';
 
 // Import from our modules
 import { 
@@ -62,6 +62,9 @@ import { buildPatchPrompt } from '../core/promptTemplates/patch.js';
 
 // Import model configuration utilities
 import { getDefaultModel } from '../utils/modelConfig.js';
+
+// Import plugin manager for environment command
+import { pluginManager } from '../core/plugin-manager/index.js';
 
 // Get directory references
 const __filename = fileURLToPath(import.meta.url);
@@ -127,7 +130,21 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
     while (true) {
       closeReadline(); // Ensure clean state before each iteration
       console.log(boxen(
-        `${chalk.gray('Type a command ')} (${chalk.blue('/debug')}, ${chalk.blue('/index')}, ${chalk.blue('/model')}, ${chalk.blue('/logging')}, ${chalk.blue('/help')})`,
+        `${chalk.gray('Type a command: ')}
+${chalk.blue('/debug')} - Auto-fix the last command
+${chalk.blue('/analyze')} - Analyze an error
+${chalk.blue('/index')} - Index codebase (RAG)
+${chalk.blue('/model')} - Select AI model
+${chalk.blue('/history')} - Browse command history
+${chalk.blue('/environment')} - Show environment info
+${chalk.blue('/status')} - System status
+${chalk.blue('/workflow')} - Workflow management
+${chalk.blue('/plugins')} - Plugin management
+${chalk.blue('/session')} - Session management
+${chalk.blue('/config')} - Configuration
+${chalk.blue('/a2a')} - Agent-to-Agent protocol
+${chalk.blue('/logging')} - Setup logging
+${chalk.blue('/help')} - Show help`,
         BOX.PROMPT
       ));
       // Add improved gray text below the boxen prompt for exit instructions and /debug info
@@ -223,14 +240,220 @@ async function interactiveLoop(initialCmd, limit, initialModel) {
           break;
         }
 
+        case '/analyze': {
+          console.log(chalk.gray('Enter the error message to analyze:'));
+          const errorMsg = await askInput('Error: ');
+          if (errorMsg) {
+            await runEnhancedCommand('analyze', errorMsg, { error: errorMsg, files: [] });
+          }
+          break;
+        }
+
+        case '/environment': {
+          try {
+            console.log(chalk.gray('  Discovering environment context...'));
+            await pluginManager.discoverPlugins();
+            const analyzer = await pluginManager.loadPlugin('analyzers', 'environment');
+            if (analyzer && analyzer.instance) {
+              // Initialize if needed
+              if (analyzer.instance.initialize) {
+                await analyzer.instance.initialize();
+              }
+              const env = await analyzer.instance.getEnvironment();
+              console.log(chalk.cyan('\n🌍 Environment Context:\n'));
+              
+              // Format the output nicely
+              console.log(chalk.blue('System:'));
+              console.log(`  Platform: ${env.system?.platform || 'unknown'}`);
+              console.log(`  Architecture: ${env.system?.arch || 'unknown'}`);
+              console.log(`  Node Version: ${env.system?.nodeVersion || 'unknown'}`);
+              
+              if (env.project) {
+                console.log(chalk.blue('\nProject:'));
+                console.log(`  Directory: ${env.project.cwd}`);
+                console.log(`  Has Git: ${env.project.hasGit ? 'Yes' : 'No'}`);
+                console.log(`  Has package.json: ${env.project.hasPackageJson ? 'Yes' : 'No'}`);
+              }
+              
+              if (env.tools) {
+                console.log(chalk.blue('\nDevelopment Tools:'));
+                Object.entries(env.tools).forEach(([tool, info]) => {
+                  if (info && typeof info === 'object' && info.version) {
+                    console.log(`  ${tool}: ${info.version}`);
+                  }
+                });
+              }
+              
+              // Show full JSON if debug mode
+              if (process.env.DEBUG) {
+                console.log(chalk.gray('\nFull environment data:'));
+                console.log(JSON.stringify(env, null, 2));
+              }
+            } else {
+              console.log(chalk.yellow('Environment analyzer not available.'));
+            }
+          } catch (error) {
+            console.log(chalk.red('Failed to load environment context:'), error.message);
+          }
+          break;
+        }
+
+        case '/status': {
+          await runEnhancedCommand('status', null, {});
+          break;
+        }
+
+        case '/workflow': {
+          console.log(chalk.cyan('\n🔄 Workflow Management\n'));
+          console.log('Available workflows:');
+          console.log('  ' + chalk.green('auto-repair') + ' - Automatically fix failing tests and builds');
+          console.log('  ' + chalk.green('code-review') + ' - AI-powered code review');
+          console.log('  ' + chalk.green('deployment') + ' - Deployment workflow');
+          console.log('  ' + chalk.green('test-debug') + ' - Debug failing tests');
+          
+          console.log(chalk.cyan('\nCommands:'));
+          console.log('  execute <workflow> - Execute a workflow');
+          console.log('  rollback <id>      - Rollback a workflow');
+          
+          console.log(chalk.gray('\nExamples:'));
+          console.log(chalk.gray('  cloi workflow execute auto-repair'));
+          console.log(chalk.gray('  cloi workflow execute code-review --context \'{"pr": 123}\''));
+          console.log(chalk.gray('  cloi workflow rollback abc123'));
+          
+          const action = await askInput('\nWorkflow action (execute/rollback/cancel): ');
+          if (action === 'execute') {
+            const workflow = await askInput('Workflow name: ');
+            if (workflow) {
+              await runEnhancedCommand('workflow', 'execute', { workflow });
+            }
+          } else if (action === 'rollback') {
+            const workflowId = await askInput('Workflow ID: ');
+            if (workflowId) {
+              await runEnhancedCommand('workflow', 'rollback', { 'workflow-id': workflowId });
+            }
+          }
+          break;
+        }
+
+        case '/plugins': {
+          console.log(chalk.cyan('\n📦 Plugin Management\n'));
+          const action = await askInput('Plugin action (list/load/install/cancel): ');
+          
+          if (action === 'list') {
+            await runEnhancedCommand('plugins', 'list', {});
+          } else if (action === 'load') {
+            console.log(chalk.gray('\nAvailable plugin types: analyzers, providers, quality, integrations'));
+            console.log(chalk.gray('Example: analyzers:javascript'));
+            const plugin = await askInput('Plugin to load (type:name): ');
+            if (plugin) {
+              await runEnhancedCommand('plugins', 'load', { plugin });
+            }
+          } else if (action === 'install') {
+            console.log(chalk.gray('\nInstall plugins from npm (e.g., @cloi/plugin-python)'));
+            const packageName = await askInput('NPM package name: ');
+            if (packageName) {
+              await runEnhancedCommand('plugins', 'install', { package: packageName });
+            }
+          }
+          break;
+        }
+
+        case '/session': {
+          console.log(chalk.cyan('\n📝 Session Management\n'));
+          const action = await askInput('Session action (status/history/restore/export/cancel): ');
+          
+          if (action === 'status') {
+            await runEnhancedCommand('session', 'status', {});
+          } else if (action === 'history') {
+            const limit = await askInput('Number of sessions to show (default: 10): ') || '10';
+            await runEnhancedCommand('session', 'history', { limit: parseInt(limit) });
+          } else if (action === 'restore') {
+            console.log(chalk.yellow('⚠️  This will restore a previous session'));
+            const force = await askYesNo('Force restore even if current session exists?');
+            await runEnhancedCommand('session', 'restore', { force });
+          } else if (action === 'export') {
+            const sessionId = await askInput('Session ID to export: ');
+            if (sessionId) {
+              const output = await askInput('Output file (optional): ');
+              await runEnhancedCommand('session', 'export', { sessionId, output });
+            }
+          }
+          break;
+        }
+
+        case '/config': {
+          console.log(chalk.cyan('\n⚙️  Configuration Management\n'));
+          const action = await askInput('Config action (show/set/cancel): ');
+          
+          if (action === 'show') {
+            await runEnhancedCommand('config', 'show', {});
+          } else if (action === 'set') {
+            console.log(chalk.gray('\nExample keys: providers.default, plugins.autoLoad, analysis.maxTokens'));
+            const key = await askInput('Configuration key: ');
+            if (key) {
+              const value = await askInput('Value: ');
+              if (value) {
+                const scope = await askInput('Scope (user/project/system) [default: user]: ') || 'user';
+                await runEnhancedCommand('config', 'set', { key, value, scope });
+              }
+            }
+          }
+          break;
+        }
+
+        case '/a2a': {
+          console.log(chalk.cyan('\n🤖 Agent-to-Agent Protocol\n'));
+          console.log('The A2A protocol enables multi-AI collaboration for complex debugging tasks.');
+          
+          console.log(chalk.cyan('\nCommands:'));
+          console.log('  ' + chalk.green('start') + '  - Start A2A server for external AI connections');
+          console.log('  ' + chalk.green('stop') + '   - Stop the running A2A server');
+          console.log('  ' + chalk.green('status') + ' - Show current A2A server status');
+          console.log('  ' + chalk.green('setup') + '  - Setup A2A integration with external AIs');
+          
+          console.log(chalk.gray('\nExamples:'));
+          console.log(chalk.gray('  cloi a2a start --port 9090'));
+          console.log(chalk.gray('  cloi a2a start --port 9090 --ai claude-code'));
+          console.log(chalk.gray('  cloi a2a setup --ai github-copilot'));
+          
+          console.log(chalk.blue('\nSupported AI Integrations:'));
+          console.log('  • Claude Code (claude-code)');
+          console.log('  • GitHub Copilot (github-copilot)');
+          console.log('  • Universal (universal) - Works with any A2A-compatible AI');
+          
+          const action = await askInput('\nA2A action (start/stop/status/setup/cancel): ');
+          if (action === 'start') {
+            const port = await askInput('Port (default: 9090): ') || '9090';
+            const ai = await askInput('AI integration (default: universal): ') || 'universal';
+            await runEnhancedCommand('a2a', 'start', { port: parseInt(port), ai });
+          } else if (action === 'stop') {
+            await runEnhancedCommand('a2a', 'stop', {});
+          } else if (action === 'status') {
+            await runEnhancedCommand('a2a', 'status', {});
+          } else if (action === 'setup') {
+            const ai = await askInput('AI to setup (claude-code/github-copilot/universal): ') || 'universal';
+            await runEnhancedCommand('a2a', 'setup', { ai });
+          }
+          break;
+        }
+
         case '/help':
           console.log(boxen(
             [
-              '/debug    – let me fix that error for you',
-              '/index    – scan your codebase for better debugging',
-              '/model    – pick a different AI model',
-              '/logging  – set up automatic error logging (zsh only)',
-              '/help     – show this menu',
+              '/debug       – let me fix that error for you',
+              '/analyze     – analyze an error message',
+              '/index       – scan your codebase for better debugging',
+              '/model       – pick a different AI model',
+              '/history     – browse and debug from history',
+              '/environment – show environment context',
+              '/status      – show system status',
+              '/workflow    – workflow management',
+              '/plugins     – plugin management',
+              '/session     – session management',
+              '/config      – configuration settings',
+              '/a2a         – agent-to-agent protocol',
+              '/logging     – set up automatic error logging',
+              '/help        – show this menu',
             ].join('\n'),
             BOX.PROMPT
           ));
@@ -1285,6 +1508,101 @@ async function debugLoop(initialCmd, limit, currentModel) {
   }
   
 
+/* ───────────────  Enhanced command delegation  ─────────────── */
+
+/**
+ * Delegate enhanced commands to the modular CLI
+ */
+async function runEnhancedCommand(command, subcommand, argv) {
+  try {
+    // Import the modular CLI functions
+    const modularModule = await import('./modular.js');
+    
+    // Map commands to their handlers
+    switch (command) {
+      case 'plugins':
+        if (subcommand === 'list') {
+          const { listPlugins } = modularModule;
+          await listPlugins(argv);
+        } else if (subcommand === 'load') {
+          const { loadPlugin } = modularModule;
+          await loadPlugin(argv);
+        }
+        break;
+        
+      case 'analyze':
+        const { analyzeError } = modularModule;
+        await analyzeError(argv);
+        break;
+        
+      case 'session':
+        if (subcommand === 'status') {
+          const { sessionStatus } = modularModule;
+          await sessionStatus(argv);
+        } else if (subcommand === 'history') {
+          const { sessionHistory } = modularModule;
+          await sessionHistory(argv);
+        } else if (subcommand === 'restore') {
+          const { restoreSession } = modularModule;
+          await restoreSession(argv);
+        }
+        break;
+        
+      case 'workflow':
+        if (subcommand === 'execute') {
+          const { executeWorkflow } = modularModule;
+          await executeWorkflow(argv);
+        } else if (subcommand === 'rollback') {
+          const { rollbackWorkflow } = modularModule;
+          await rollbackWorkflow(argv);
+        }
+        break;
+        
+      case 'config':
+        if (subcommand === 'show') {
+          const { showConfig } = modularModule;
+          await showConfig(argv);
+        } else if (subcommand === 'set') {
+          const { setConfig } = modularModule;
+          await setConfig(argv);
+        }
+        break;
+        
+      case 'status':
+        const { systemStatus } = modularModule;
+        await systemStatus(argv);
+        break;
+        
+      case 'a2a':
+        if (subcommand === 'start') {
+          const { startA2AServer } = modularModule;
+          await startA2AServer(argv);
+        } else if (subcommand === 'stop') {
+          const { stopA2AServer } = modularModule;
+          await stopA2AServer(argv);
+        } else if (subcommand === 'status') {
+          const { getA2AStatus } = modularModule;
+          await getA2AStatus(argv);
+        } else if (subcommand === 'setup') {
+          const { setupA2A } = modularModule;
+          await setupA2A(argv);
+        }
+        break;
+        
+      default:
+        console.error(chalk.red(`Unknown enhanced command: ${command}`));
+        process.exit(1);
+    }
+    
+    // Exit after enhanced command execution to prevent legacy loop
+    process.exit(0);
+    
+  } catch (error) {
+    console.error(chalk.red('Enhanced command failed:'), error.message);
+    process.exit(1);
+  }
+}
+
 /* ───────────────────────────────  Main  ──────────────────────────────── */
 
 /**
@@ -1295,6 +1613,10 @@ async function debugLoop(initialCmd, limit, currentModel) {
  */
 (async function main() {
     const argv = yargs(hideBin(process.argv))
+      .scriptName('cloi')
+      .usage('$0 [command] [options]')
+      
+      // Legacy options (maintained for backward compatibility)
       .option('model', {
         alias: 'm',
         describe: 'Ollama model to use for completions',
@@ -1305,8 +1627,260 @@ async function debugLoop(initialCmd, limit, currentModel) {
         describe: 'Set up automatic terminal logging',
         type: 'boolean'
       })
+      
+      // Legacy commands (for backward compatibility)
+      .command('debug', 'Debug the last command from terminal history', {}, async (argv) => {
+        // This starts the interactive loop which will handle /debug
+        const lastCmd = await lastRealCommand();
+        if (!lastCmd) {
+          console.log(chalk.gray('No recent commands found in history.'));
+          return;
+        }
+        console.log(boxen(lastCmd, { ...BOX.WELCOME, title: 'Last Command'}));
+        await interactiveLoop(lastCmd, 15, argv.model || await getDefaultModel());
+      })
+      
+      .command('index', 'Index codebase for enhanced analysis (RAG)', {}, async (argv) => {
+        await indexCommand(argv.model || await getDefaultModel());
+      })
+      
+      .command('history [limit]', 'Select and debug a command from history', {
+        limit: {
+          describe: 'Number of recent commands to show',
+          type: 'number',
+          default: 15
+        }
+      }, async (argv) => {
+        const selectedCmd = await selectHistoryItem(argv.limit);
+        if (selectedCmd) {
+          console.log(boxen(selectedCmd, { ...BOX.WELCOME, title: 'Selected Command'}));
+          await interactiveLoop(selectedCmd, argv.limit, argv.model || await getDefaultModel());
+        } else {
+          console.log(chalk.gray('No command selected.'));
+        }
+      })
+      
+      .command('model', 'Select AI model to use', {}, async () => {
+        const selectedModel = await selectModelFromList();
+        if (selectedModel) {
+          console.log(chalk.green(`Selected model: ${selectedModel}`));
+          // Save as default for future use
+          const { saveDefaultModel } = await import('../utils/modelConfig.js');
+          await saveDefaultModel(selectedModel);
+          console.log(chalk.gray('Model saved as default.'));
+        }
+      })
+      
+      .command('logging', 'Setup automatic terminal logging', {}, async () => {
+        const { setupTerminalLogging } = await import('../utils/terminalLogger.js');
+        const { askYesNo, askInput, closeReadline } = await import('../ui/terminalUI.js');
+        const uiTools = { askYesNo, askInput, closeReadline };
+        const setupResult = await setupTerminalLogging(uiTools, true);
+        if (!setupResult) {
+          console.log(chalk.gray('Terminal logging setup was not completed.'));
+        } else {
+          console.log(boxen(
+            chalk.green('Terminal logging has been enabled.\nRestart your terminal for changes to take effect.'),
+            { ...BOX.OUTPUT, title: 'Success' }
+          ));
+        }
+      })
+      
+      .command('environment', 'Show environment context and system information', {}, async () => {
+        // This provides environmental awareness for better debugging
+        try {
+          await pluginManager.discoverPlugins();
+          const analyzer = await pluginManager.loadPlugin('analyzers', 'environment');
+          if (analyzer && analyzer.instance) {
+            // Initialize if not already done
+            if (analyzer.instance.initialize) {
+              await analyzer.instance.initialize();
+            }
+            const env = await analyzer.instance.getEnvironment();
+            console.log(chalk.cyan('🌍 Environment Context:\n'));
+            console.log(JSON.stringify(env, null, 2));
+          } else {
+            console.log(chalk.yellow('Environment analyzer not available.'));
+          }
+        } catch (error) {
+          console.log(chalk.yellow('Could not load environment analyzer.'));
+          console.log(chalk.gray(error.message));
+        }
+      })
+
+      // Enhanced modular commands
+      .command('plugins', 'Plugin management commands', (yargs) => {
+        return yargs
+          .command('list', 'List all available plugins', {}, async (argv) => {
+            await runEnhancedCommand('plugins', 'list', argv);
+          })
+          .command('load <plugin>', 'Load a specific plugin', {
+            plugin: {
+              describe: 'Plugin name in format type:name',
+              type: 'string'
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('plugins', 'load', argv);
+          })
+          .command('install <package>', 'Install a plugin from npm', {
+            package: {
+              describe: 'npm package name',
+              type: 'string'
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('plugins', 'install', argv);
+          });
+      })
+      
+      .command('analyze <error>', 'Analyze an error using the enhanced system', {
+        error: {
+          describe: 'Error message or file containing error',
+          type: 'string'
+        },
+        files: {
+          describe: 'Files related to the error',
+          type: 'array',
+          default: []
+        },
+        context: {
+          describe: 'Additional context (JSON string)',
+          type: 'string'
+        }
+      }, async (argv) => {
+        await runEnhancedCommand('analyze', argv.error, argv);
+      })
+      
+      .command('session', 'Session management', (yargs) => {
+        return yargs
+          .command('status', 'Show current session status', {}, async (argv) => {
+            await runEnhancedCommand('session', 'status', argv);
+          })
+          .command('history [limit]', 'Show session history', {
+            limit: {
+              describe: 'Number of sessions to show',
+              type: 'number',
+              default: 10
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('session', 'history', argv);
+          })
+          .command('restore', 'Restore previous session', {
+            force: {
+              describe: 'Force restore even if current session exists',
+              type: 'boolean',
+              default: false
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('session', 'restore', argv);
+          })
+          .command('export <sessionId>', 'Export session data', {
+            sessionId: {
+              describe: 'Session ID to export',
+              type: 'string'
+            },
+            output: {
+              describe: 'Output file',
+              type: 'string'
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('session', 'export', argv);
+          })
+          .command('recovery-info', 'Show session recovery information', {}, async (argv) => {
+            await runEnhancedCommand('session', 'recovery-info', argv);
+          });
+      })
+      
+      .command('workflow', 'Workflow management', (yargs) => {
+        return yargs
+          .command('execute <workflow>', 'Execute a workflow', {
+            workflow: {
+              describe: 'Workflow name or type',
+              type: 'string'
+            },
+            context: {
+              describe: 'Workflow context (JSON string)',
+              type: 'string'
+            },
+            'dry-run': {
+              describe: 'Show what would be done without executing',
+              type: 'boolean',
+              default: false
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('workflow', 'execute', argv);
+          })
+          .command('rollback <workflow-id>', 'Rollback a workflow', {
+            'workflow-id': {
+              describe: 'Workflow ID to rollback',
+              type: 'string'
+            },
+            force: {
+              describe: 'Force rollback without confirmation',
+              type: 'boolean',
+              default: false
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('workflow', 'rollback', argv);
+          });
+      })
+      
+      .command('config', 'Configuration management', (yargs) => {
+        return yargs
+          .command('show', 'Show current configuration', {}, async (argv) => {
+            await runEnhancedCommand('config', 'show', argv);
+          })
+          .command('set <key> <value>', 'Set configuration value', {
+            key: { type: 'string' },
+            value: { type: 'string' },
+            scope: {
+              describe: 'Configuration scope (user, project, system)',
+              type: 'string',
+              default: 'user'
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('config', 'set', argv);
+          });
+      })
+      
+      .command('status', 'Show enhanced system status', {}, async (argv) => {
+        await runEnhancedCommand('status', null, argv);
+      })
+      
+      .command('a2a', 'Agent-to-Agent protocol commands', (yargs) => {
+        return yargs
+          .command('start', 'Start A2A server', {
+            port: {
+              describe: 'Port to listen on',
+              type: 'number',
+              default: 9090
+            },
+            ai: {
+              describe: 'AI integration type',
+              type: 'string',
+              default: 'universal'
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('a2a', 'start', argv);
+          })
+          .command('stop', 'Stop A2A server', {}, async (argv) => {
+            await runEnhancedCommand('a2a', 'stop', argv);
+          })
+          .command('status', 'Show A2A server status', {}, async (argv) => {
+            await runEnhancedCommand('a2a', 'status', argv);
+          })
+          .command('setup', 'Setup A2A integration', {
+            ai: {
+              describe: 'AI type to setup (claude-code, github-copilot, universal)',
+              type: 'string',
+              default: 'universal'
+            }
+          }, async (argv) => {
+            await runEnhancedCommand('a2a', 'setup', argv);
+          });
+      })
+      
       .help().alias('help', '?')
-      .epilog('CLOI - Open source and completely local debugging agent.')
+      .epilog('CLOI - Security-first agentic debugging tool with modular architecture.')
       .parse();
     
     // Check if user explicitly requested to set up terminal logging
@@ -1546,13 +2120,13 @@ export async function selectModelFromList() {
  * Checks if network is available by checking if DNS resolution works
  * @returns {boolean} - True if network is available
  */
-function checkNetwork() {
-  try {
-    execSync('ping -c 1 -W 1 1.1.1.1 > /dev/null 2>&1', { stdio: 'ignore' });
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
+// function checkNetwork() {
+//   try {
+//     execSync('ping -c 1 -W 1 1.1.1.1 > /dev/null 2>&1', { stdio: 'ignore' });
+//     return true;
+//   } catch (error) {
+//     return false;
+//   }
+// }
 
 // askInput is already imported from terminalUI.js at the top of the file
