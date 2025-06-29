@@ -160,23 +160,560 @@ cloi plugins load integrations:cicd
    cloi workflow execute auto-repair --context '{"error": "Test failed", "buildLog": "..."}'
    ```
 
-### Test Case 4: A2A Protocol Testing
+### Test Case 4: A2A Protocol Inter-Project Communication Testing
 
-**Setup**:
+**Overview**: Comprehensive testing of Agent-to-Agent (A2A) protocol for inter-project communication, allowing external projects to communicate with CLOI and leverage its analysis capabilities.
+
+**⚠️ Important**: External projects should **NOT** require access to CLOI's source code. The A2A protocol is designed for black-box communication where external projects only need:
+- The CLOI A2A server endpoint (HTTP URL)
+- The A2A protocol specification (JSON-RPC 2.0)
+- Agent discovery capabilities
+
+**CLOI Deployment Scenarios for External Projects**:
+1. **Remote Deployment**: CLOI hosted on a server (e.g., `https://cloi-api.company.com`)
+2. **Local Installation**: CLOI installed via npm/package manager on developer machines
+3. **Container Service**: CLOI running in Docker/Kubernetes for team access
+4. **CI/CD Service**: CLOI as a service in continuous integration pipelines
+
+#### 4.1 A2A Server Setup and Validation
+
+**For CLOI Developers (Internal Testing)**:
 ```bash
-# Start A2A server (when implemented)
-cloi a2a start --port 9090
+# Ensure all dependencies are installed
+cd /path/to/cloi
+npm install
 
-# Test with external AI (if available)
-cloi a2a status
+# Verify A2A module availability
+node -e "import('./src/protocols/a2a/index.js').then(() => console.log('✅ A2A available')).catch(() => console.log('❌ A2A unavailable'))"
+
+# Start CLOI A2A Server
+node test-a2a-server-persistent.js
+# OR
+cloi a2a start --port 9090
 ```
 
-**Test Scenarios**:
+**For External Projects (Production Usage)**:
+```bash
+# External projects assume CLOI is already deployed/running
+# They only need to know the endpoint URL
 
-1. **Agent Communication**
-   - Test Claude Code integration
-   - Test universal AI prompt effectiveness
-   - Validate real-time collaboration
+# Option 1: Use a remote CLOI deployment
+export CLOI_A2A_ENDPOINT="https://cloi-api.company.com"
+
+# Option 2: Use local CLOI installation
+export CLOI_A2A_ENDPOINT="http://localhost:9090"
+
+# Option 3: Use containerized CLOI
+export CLOI_A2A_ENDPOINT="http://cloi-service:9090"
+
+# Verify CLOI is accessible
+curl -f $CLOI_A2A_ENDPOINT/health
+```
+
+**Expected Output**:
+```
+🚀 Starting persistent A2A server for testing...
+🤖 A2A HTTP Server initialized with agent ID: [uuid]
+✅ A2A server started successfully on port 9090
+🔗 Agent Card: http://localhost:9090/.well-known/agent.json
+📡 JSON-RPC endpoint: http://localhost:9090/
+💾 Health check: http://localhost:9090/health
+📞 Press Ctrl+C to stop the server
+```
+
+#### 4.2 Basic A2A Server Validation
+
+**Test 1: Agent Card Discovery**
+```bash
+# Test agent card endpoint
+curl -X GET http://localhost:9090/.well-known/agent.json | jq
+
+# Expected: JSON response with agent capabilities
+```
+
+**Test 2: Health Check**
+```bash
+# Test health endpoint
+curl -X GET http://localhost:9090/health | jq
+
+# Expected: Status, agent ID, uptime, metrics
+```
+
+**Test 3: JSON-RPC Interface**
+```bash
+# Test basic JSON-RPC communication
+curl -X POST http://localhost:9090/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "messageId": "test-1",
+        "role": "user",
+        "kind": "message",
+        "parts": [{"kind": "text", "text": "Hello CLOI!"}]
+      }
+    },
+    "id": 1
+  }' | jq
+```
+
+#### 4.3 External Client Testing
+
+**Setup External Test Client**:
+```javascript
+// external-test-client.js
+import { v4 as uuidv4 } from 'uuid';
+
+class CloiA2AClient {
+  constructor(baseUrl = 'http://localhost:9090') {
+    // External projects can point to any CLOI deployment:
+    // - Local: 'http://localhost:9090'
+    // - Remote: 'https://cloi-api.company.com'
+    // - Container: 'http://cloi-service:9090'
+    this.baseUrl = baseUrl;
+  }
+
+  async getAgentCard() {
+    const response = await fetch(`${this.baseUrl}/.well-known/agent.json`);
+    return await response.json();
+  }
+
+  async sendMessage(text, options = {}) {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'message/send',
+      params: {
+        message: {
+          messageId: uuidv4(),
+          role: 'user',
+          kind: 'message',
+          parts: [{ kind: 'text', text }]
+        },
+        configuration: {
+          blocking: true,
+          acceptedOutputModes: ['text/plain'],
+          ...options
+        }
+      },
+      id: Date.now()
+    };
+
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+
+    return await response.json();
+  }
+
+  async getHealth() {
+    const response = await fetch(`${this.baseUrl}/health`);
+    return await response.json();
+  }
+}
+
+// Test usage
+const client = new CloiA2AClient();
+
+// Test 1: Agent Discovery
+console.log('Agent Card:', await client.getAgentCard());
+
+// Test 2: Error Analysis
+const errorResponse = await client.sendMessage(
+  'Analyze this error: ReferenceError: x is not defined'
+);
+console.log('Analysis:', errorResponse);
+
+// Test 3: Code Review Request
+const codeResponse = await client.sendMessage(`
+  Review this code for issues:
+  function processData(data) {
+    return data.map(item => item.value);
+  }
+`);
+console.log('Code Review:', codeResponse);
+```
+
+**Run External Client Test**:
+```bash
+# Run the external client test
+node external-test-client.js
+```
+
+#### 4.4 Inter-Project Communication Scenarios
+
+**Scenario 1: Error Analysis Integration**
+```javascript
+// external-project/src/error-handler.js
+// Note: External projects create their own A2A client library
+// They don't import from CLOI's source code
+
+// external-project/lib/cloi-client.js (external project's own library)
+import { v4 as uuidv4 } from 'uuid';
+
+export class CloiA2AClient {
+  constructor(baseUrl = process.env.CLOI_A2A_ENDPOINT || 'http://localhost:9090') {
+    this.baseUrl = baseUrl;
+  }
+
+  async sendMessage(text, options = {}) {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'message/send',
+      params: {
+        message: {
+          messageId: uuidv4(),
+          role: 'user',
+          kind: 'message',
+          parts: [{ kind: 'text', text }]
+        },
+        configuration: {
+          blocking: true,
+          acceptedOutputModes: ['text/plain'],
+          ...options
+        }
+      },
+      id: Date.now()
+    };
+
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      throw new Error(`CLOI A2A request failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+}
+
+// external-project/src/error-handler.js
+import { CloiA2AClient } from '../lib/cloi-client.js';
+
+class ErrorAnalyzer {
+  constructor() {
+    this.cloi = new CloiA2AClient('http://localhost:9090');
+  }
+
+  async analyzeError(error, context = {}) {
+    const prompt = `
+Analyze this error and provide solutions:
+
+Error: ${error.message}
+Stack: ${error.stack}
+Context: ${JSON.stringify(context)}
+
+Please provide:
+1. Root cause analysis
+2. Potential fixes
+3. Prevention strategies
+    `;
+
+    try {
+      const response = await this.cloi.sendMessage(prompt);
+      return {
+        analysis: response.result?.message?.parts?.[0]?.text,
+        confidence: response.result?.confidence || 0.8,
+        taskId: response.result?.taskId
+      };
+    } catch (error) {
+      console.error('CLOI analysis failed:', error);
+      return { analysis: null, error: error.message };
+    }
+  }
+}
+
+// Usage in external project
+const analyzer = new ErrorAnalyzer();
+
+try {
+  throw new ReferenceError('x is not defined');
+} catch (error) {
+  const analysis = await analyzer.analyzeError(error, {
+    file: 'src/app.js',
+    line: 42,
+    function: 'processData'
+  });
+  
+  console.log('CLOI Analysis:', analysis.analysis);
+}
+```
+
+**Scenario 2: CI/CD Integration**
+```javascript
+// external-project/.github/workflows/cloi-analysis.yml
+name: CLOI Error Analysis
+
+on: [push, pull_request]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+             - name: Assume CLOI A2A Server is Running
+         run: |
+           # External projects assume CLOI A2A server is already running
+           # This could be:
+           # 1. A deployed CLOI instance (e.g., https://cloi-api.company.com)
+           # 2. A local CLOI installation managed separately
+           # 3. A containerized CLOI service
+           
+           # Wait for CLOI server to be available
+           timeout 30 bash -c 'until curl -f http://localhost:9090/health; do sleep 2; done'
+      
+      - name: Run tests with CLOI analysis
+        run: |
+          npm test 2>&1 | tee test-output.log || true
+          
+          # Send test failures to CLOI for analysis
+          node -e "
+            const fs = require('fs');
+            const testOutput = fs.readFileSync('test-output.log', 'utf8');
+            if (testOutput.includes('FAIL')) {
+              // Send to CLOI A2A server for analysis
+              fetch('http://localhost:9090/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'message/send',
+                  params: {
+                    message: {
+                      messageId: 'ci-analysis',
+                      role: 'user',
+                      kind: 'message',
+                      parts: [{ kind: 'text', text: 'Analyze test failures: ' + testOutput }]
+                    }
+                  },
+                  id: 1
+                })
+              }).then(r => r.json()).then(console.log);
+            }
+          "
+```
+
+**Scenario 3: Real-time Development Assistant**
+```javascript
+// external-project/src/dev-assistant.js
+import { CloiA2AClient } from './cloi-client.js';
+import chokidar from 'chokidar';
+import { exec } from 'child_process';
+
+class DevAssistant {
+  constructor() {
+    this.cloi = new CloiA2AClient('http://localhost:9090');
+    this.isAnalyzing = false;
+  }
+
+  start() {
+    console.log('🤖 Starting development assistant with CLOI integration...');
+    
+    // Watch for file changes
+    chokidar.watch('src/**/*.js').on('change', async (path) => {
+      if (this.isAnalyzing) return;
+      
+      console.log(`📁 File changed: ${path}`);
+      await this.analyzeFile(path);
+    });
+
+    // Watch for git commits
+    chokidar.watch('.git/COMMIT_EDITMSG').on('change', async () => {
+      await this.analyzeCommit();
+    });
+  }
+
+  async analyzeFile(filePath) {
+    this.isAnalyzing = true;
+    
+    try {
+      // Run linter/tests and capture output
+      exec(`npm run lint ${filePath}`, async (error, stdout, stderr) => {
+        if (error) {
+          const analysis = await this.cloi.sendMessage(`
+            Analyze this linting error and suggest fixes:
+            File: ${filePath}
+            Error: ${stderr}
+            
+            Provide specific code fixes.
+          `);
+          
+          console.log('🔍 CLOI Analysis:', analysis.result?.message?.parts?.[0]?.text);
+        }
+      });
+    } finally {
+      this.isAnalyzing = false;
+    }
+  }
+
+  async analyzeCommit() {
+    try {
+      exec('git diff --cached', async (error, stdout) => {
+        if (stdout) {
+          const analysis = await this.cloi.sendMessage(`
+            Review this code diff before commit:
+            ${stdout}
+            
+            Check for:
+            1. Potential bugs
+            2. Code quality issues
+            3. Security concerns
+            4. Performance issues
+          `);
+          
+          console.log('📝 Pre-commit Review:', analysis.result?.message?.parts?.[0]?.text);
+        }
+      });
+    } catch (error) {
+      console.error('Commit analysis failed:', error);
+    }
+  }
+}
+
+// Start the assistant
+const assistant = new DevAssistant();
+assistant.start();
+```
+
+#### 4.5 A2A Method Testing
+
+**Test JSON-RPC Methods**:
+```bash
+# Test message/send
+curl -X POST http://localhost:9090/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"message/send","params":{"message":{"messageId":"test","role":"user","kind":"message","parts":[{"kind":"text","text":"test"}]}},"id":1}'
+
+# Test tasks/get (if task exists)
+curl -X POST http://localhost:9090/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tasks/get","params":{"taskId":"test-task-id"},"id":2}'
+
+# Test message/stream (Server-Sent Events)
+curl -X POST http://localhost:9090/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"message/stream","params":{"message":{"messageId":"stream-test","role":"user","kind":"message","parts":[{"kind":"text","text":"Stream test"}]}},"id":3}'
+```
+
+#### 4.6 Performance and Monitoring Validation
+
+**Test Enhanced Monitoring**:
+```bash
+# Run validation with monitoring
+node src/cli/index.js validate interactive-commands --timeout 5
+
+# Check timeout metrics
+node src/cli/index.js validate timeout-metrics
+
+# Run health check
+node src/cli/index.js validate health-check --verbose
+
+# Check for performance regressions
+node src/cli/index.js validate performance-regression
+```
+
+**Expected Monitoring Output**:
+```
+📊 Timeout and Performance Metrics
+
+📈 Overall Statistics:
+  Total Commands Executed: 10
+  Successful Commands: 10
+  Timed Out Commands: 0
+  Timeout Rate: 0.00%
+  Average Execution Time: 296ms
+
+🔍 Command Performance Breakdown:
+  interactive_command_help: 2 runs, 180ms avg, 100.00% success
+  validate_interactive_commands: 2 runs, 742ms avg, 100.00% success
+```
+
+#### 4.7 A2A Troubleshooting
+
+**Common Issues and Solutions**:
+
+1. **Port Conflicts**
+   ```bash
+   # Check if port is in use
+   lsof -i :9090
+   
+   # Kill existing processes
+   pkill -f "a2a-server"
+   
+   # Use different port
+   node test-a2a-server-persistent.js --port 9091
+   ```
+
+2. **Connection Errors**
+   ```bash
+   # Check server status
+   curl -f http://localhost:9090/health || echo "Server not responding"
+   
+   # Check A2A module
+   node -e "import('./src/protocols/a2a/index.js').then(console.log)"
+   ```
+
+3. **JSON-RPC Errors**
+   ```bash
+   # Validate JSON-RPC request format
+   echo '{"jsonrpc":"2.0","method":"message/send","params":{},"id":1}' | jq
+   
+   # Check response format
+   curl -s http://localhost:9090/ -d '{"jsonrpc":"2.0","method":"message/send","params":{"message":{"messageId":"test","role":"user","kind":"message","parts":[{"kind":"text","text":"test"}]}},"id":1}' -H "Content-Type: application/json" | jq
+   ```
+
+**Performance Issues**:
+```bash
+# Monitor A2A server resources
+ps aux | grep node
+htop # Check CPU/memory usage
+
+# Test A2A response times
+time curl -X POST http://localhost:9090/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"message/send","params":{"message":{"messageId":"perf-test","role":"user","kind":"message","parts":[{"kind":"text","text":"Quick test"}]}},"id":1}'
+```
+
+#### 4.8 Success Criteria for A2A Testing
+
+**✅ Agent Discovery**:
+- Agent card accessible at `/.well-known/agent.json`
+- Contains valid capabilities, skills, and metadata
+- Returns proper JSON format
+
+**✅ JSON-RPC Communication**:
+- All standard A2A methods respond correctly
+- Error responses follow JSON-RPC 2.0 specification
+- Request/response IDs match properly
+
+**✅ Inter-Project Integration**:
+- External projects can successfully communicate with CLOI
+- Error analysis provides meaningful results
+- CI/CD integration works without blocking pipelines
+
+**✅ Performance Benchmarks**:
+- Agent card response: < 100ms
+- Simple message/send: < 2 seconds
+- Complex analysis: < 30 seconds
+- Memory usage: < 200MB for A2A server
+
+**✅ Monitoring Integration**:
+- Timeout metrics collected for A2A operations
+- Health checks include A2A server status
+- Performance regression detection works for A2A methods
 
 ## Phase 3: Advanced Features Testing
 
