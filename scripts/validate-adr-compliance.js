@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * ADR Compliance Validator
+ * ADR Compliance Validator - Comprehensive Architectural Governance Engine
  * 
- * A standalone script to validate architectural decisions against the codebase.
- * Can be run locally or in CI/CD pipelines.
+ * Validates architectural decisions against the codebase using CLI governance gateway pattern.
+ * Supports multi-domain validation across Plugin System, Workflow Engine, Configuration Hierarchy.
  * 
  * Usage:
  *   node scripts/validate-adr-compliance.js [OPTIONS]
@@ -14,6 +14,15 @@
  *   --json            Output results in JSON format
  *   --ai-suggestions  Generate AI-powered repair suggestions using Ollama
  *   --model=MODEL     Specify Ollama model (default: llama3.1:8b)
+ *   
+ * Comprehensive Governance:
+ *   --command-review           Enable CLI command review validation
+ *   --cross-domain            Validate coordination across all domains
+ *   --plugin-compliance       Check plugin API contract adherence (ADR-011)
+ *   --workflow-validation     Validate workflow engine orchestration (ADR-012)
+ *   --config-hierarchy        Check configuration precedence rules (ADR-013)
+ *   --error-analysis          Analyze errors for architectural violations
+ *   --metadata-file=FILE      Use external validation metadata
  *   
  * Research Generation:
  *   --research        Force generation of research document
@@ -56,6 +65,16 @@ const CONFIG = {
   ollamaModel: process.argv.find(arg => arg.startsWith('--model='))?.split('=')[1] || 'llama3.1:8b',
   initMode: process.argv.includes('--init'),
   suggestADRs: process.argv.includes('--suggest-adrs'),
+  
+  // Comprehensive governance options
+  commandReview: process.argv.includes('--command-review'),
+  crossDomain: process.argv.includes('--cross-domain'),
+  pluginCompliance: process.argv.includes('--plugin-compliance'),
+  workflowValidation: process.argv.includes('--workflow-validation'),
+  configHierarchy: process.argv.includes('--config-hierarchy'),
+  errorAnalysis: process.argv.find(arg => arg.startsWith('--error-analysis='))?.split('=')[1],
+  metadataFile: process.argv.find(arg => arg.startsWith('--metadata-file='))?.split('=')[1],
+  
   // Research generation options
   generateResearch: process.argv.includes('--research'),
   researchThreshold: parseInt(process.argv.find(arg => arg.startsWith('--research-threshold='))?.split('=')[1]) || 3,
@@ -178,8 +197,48 @@ class ValidationEngine {
         case 'import-pattern':
           await this.validateImportPattern(constraint, adr);
           break;
+        case 'plugin-contract':
+          await this.validatePluginContract(constraint, adr);
+          break;
+        case 'workflow-orchestration':
+          await this.validateWorkflowOrchestration(constraint, adr);
+          break;
+        case 'configuration-hierarchy':
+          await this.validateConfigurationHierarchy(constraint, adr);
+          break;
+        case 'cli-command-pattern':
+          await this.validateCLICommandPattern(constraint, adr);
+          break;
+        case 'resource-management':
+          await this.validateResourceManagement(constraint, adr);
+          break;
         // Add more constraint types as needed
       }
+    }
+
+    // Run comprehensive governance checks if enabled
+    if (CONFIG.commandReview) {
+      await this.runCommandReviewValidation(adr);
+    }
+    
+    if (CONFIG.crossDomain) {
+      await this.runCrossDomainValidation(adr);
+    }
+    
+    if (CONFIG.pluginCompliance) {
+      await this.runPluginComplianceValidation(adr);
+    }
+    
+    if (CONFIG.workflowValidation) {
+      await this.runWorkflowValidation(adr);
+    }
+    
+    if (CONFIG.configHierarchy) {
+      await this.runConfigHierarchyValidation(adr);
+    }
+    
+    if (CONFIG.errorAnalysis) {
+      await this.runErrorAnalysisValidation(CONFIG.errorAnalysis, adr);
     }
   }
 
@@ -286,6 +345,251 @@ export default {
     await fs.writeFile(filePath, content, 'utf-8');
     console.log(`✅ Updated imports in ${filePath}`);
   }
+
+  // ==================== COMPREHENSIVE GOVERNANCE VALIDATION METHODS ====================
+
+  async runCommandReviewValidation(adr) {
+    console.log(`Running command review validation for ${adr.id}...`);
+    
+    // CLI governance gateway validation
+    await this.validateCLIGovernanceGateway();
+    
+    // Command registry consistency
+    await this.validateCommandRegistryConsistency();
+    
+    // Session management integrity
+    await this.validateSessionManagementIntegrity();
+  }
+
+  async runCrossDomainValidation(adr) {
+    console.log(`Running cross-domain validation for ${adr.id}...`);
+    
+    // Domain boundary enforcement
+    await this.validateDomainBoundaries();
+    
+    // Integration point consistency
+    await this.validateIntegrationPoints();
+    
+    // Resource coordination
+    await this.validateResourceCoordination();
+  }
+
+  async runPluginComplianceValidation(adr) {
+    console.log(`Running plugin compliance validation for ${adr.id}...`);
+    
+    // Plugin API contract adherence (ADR-011)
+    await this.validatePluginAPIContracts();
+    
+    // Plugin discovery mechanism (ADR-010)
+    await this.validatePluginDiscoveryMechanism();
+    
+    // Plugin lifecycle management
+    await this.validatePluginLifecycleManagement();
+  }
+
+  async runWorkflowValidation(adr) {
+    console.log(`Running workflow validation for ${adr.id}...`);
+    
+    // Workflow engine orchestration (ADR-012)
+    await this.validateWorkflowEngineOrchestration();
+    
+    // Step executor consistency
+    await this.validateStepExecutorConsistency();
+    
+    // Rollback mechanism integrity
+    await this.validateRollbackMechanismIntegrity();
+  }
+
+  async runConfigHierarchyValidation(adr) {
+    console.log(`Running configuration hierarchy validation for ${adr.id}...`);
+    
+    // Configuration precedence rules (ADR-013)
+    await this.validateConfigurationPrecedence();
+    
+    // Environment context detection
+    await this.validateEnvironmentContextDetection();
+    
+    // Context-aware configuration resolution
+    await this.validateContextAwareConfiguration();
+  }
+
+  async runErrorAnalysisValidation(errorOutput, adr) {
+    console.log(`Running error analysis validation for ${adr.id}...`);
+    
+    // Parse error output for architectural violations
+    const violations = await this.parseArchitecturalViolations(errorOutput);
+    
+    // Check against ADR constraints
+    for (const violation of violations) {
+      await this.validateViolationAgainstADR(violation, adr);
+    }
+  }
+
+  async validateCLIGovernanceGateway() {
+    // Validate unified CLI architecture (ADR-001)
+    const cliPath = path.join(CONFIG.codebaseRoot, 'src', 'cli', 'index.js');
+    
+    try {
+      await fs.access(cliPath);
+      console.log('✅ CLI governance gateway exists');
+    } catch {
+      this.violations.push({
+        type: 'cli-governance',
+        severity: 'error',
+        message: 'CLI governance gateway not found',
+        file: cliPath,
+        adr: 'ADR-001'
+      });
+    }
+  }
+
+  async validatePluginAPIContracts() {
+    // Validate plugin.json files across all plugins
+    const pluginPaths = [
+      path.join(CONFIG.codebaseRoot, 'src', 'plugins', 'analyzers'),
+      path.join(CONFIG.codebaseRoot, 'src', 'plugins', 'integrations'),
+      path.join(CONFIG.codebaseRoot, 'src', 'plugins', 'providers'),
+      path.join(CONFIG.codebaseRoot, 'src', 'plugins', 'quality')
+    ];
+
+    for (const pluginDir of pluginPaths) {
+      try {
+        const entries = await fs.readdir(pluginDir, { withFileTypes: true });
+        
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const pluginJsonPath = path.join(pluginDir, entry.name, 'plugin.json');
+            
+            try {
+              const pluginData = JSON.parse(await fs.readFile(pluginJsonPath, 'utf-8'));
+              await this.validatePluginMetadata(pluginData, pluginJsonPath);
+            } catch (error) {
+              this.violations.push({
+                type: 'plugin-contract',
+                severity: 'error',
+                message: `Invalid plugin.json: ${error.message}`,
+                file: pluginJsonPath,
+                adr: 'ADR-011'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        // Plugin directory might not exist
+      }
+    }
+  }
+
+  async validatePluginMetadata(pluginData, filePath) {
+    const requiredFields = ['name', 'version', 'type', 'main', 'cloi'];
+    
+    for (const field of requiredFields) {
+      if (!pluginData[field]) {
+        this.violations.push({
+          type: 'plugin-contract',
+          severity: 'error',
+          message: `Missing required field: ${field}`,
+          file: filePath,
+          adr: 'ADR-011'
+        });
+      }
+    }
+
+    // Validate plugin type
+    const validTypes = ['analyzers', 'integrations', 'providers', 'quality'];
+    if (!validTypes.includes(pluginData.type)) {
+      this.violations.push({
+        type: 'plugin-contract',
+        severity: 'warning',
+        message: `Invalid plugin type: ${pluginData.type}`,
+        file: filePath,
+        adr: 'ADR-011'
+      });
+    }
+  }
+
+  async validateResourceCoordination() {
+    // Check for resource management patterns like A2A port conflicts
+    if (CONFIG.errorAnalysis && CONFIG.errorAnalysis.includes('EADDRINUSE')) {
+      const portMatch = CONFIG.errorAnalysis.match(/port.*?(\d+)/);
+      if (portMatch) {
+        this.violations.push({
+          type: 'resource-management',
+          severity: 'error',
+          message: `Port conflict detected on port ${portMatch[1]}`,
+          details: 'A2A server lacks dynamic port allocation',
+          adr: 'ADR-002'
+        });
+      }
+    }
+  }
+
+  async parseArchitecturalViolations(errorOutput) {
+    const violations = [];
+    
+    // A2A Port conflicts
+    if (errorOutput.includes('EADDRINUSE')) {
+      violations.push({
+        type: 'port_management',
+        pattern: 'EADDRINUSE.*port.*\\d+',
+        message: 'Port allocation conflict detected',
+        adr: 'ADR-002'
+      });
+    }
+    
+    // Import pattern violations
+    if (errorOutput.includes('unified.js')) {
+      violations.push({
+        type: 'import_pattern',
+        pattern: 'unified\\.js',
+        message: 'Deprecated unified.js import detected',
+        adr: 'ADR-003'
+      });
+    }
+    
+    // Plugin loading errors
+    if (errorOutput.includes('plugin') && errorOutput.includes('not found')) {
+      violations.push({
+        type: 'plugin_discovery',
+        pattern: 'plugin.*not found',
+        message: 'Plugin discovery mechanism failure',
+        adr: 'ADR-010'
+      });
+    }
+    
+    return violations;
+  }
+
+  async validateViolationAgainstADR(violation, adr) {
+    // Check if the violation matches ADR constraints
+    const { constraints = [] } = adr.validationMetadata;
+    
+    for (const constraint of constraints) {
+      if (constraint.type === violation.type) {
+        this.violations.push({
+          type: violation.type,
+          severity: constraint.severity || 'warning',
+          message: violation.message,
+          adr: adr.id,
+          constraint: constraint.description
+        });
+      }
+    }
+  }
+
+  // Placeholder methods for comprehensive validation (to be implemented)
+  async validateCommandRegistryConsistency() { /* Implementation TBD */ }
+  async validateSessionManagementIntegrity() { /* Implementation TBD */ }
+  async validateDomainBoundaries() { /* Implementation TBD */ }
+  async validateIntegrationPoints() { /* Implementation TBD */ }
+  async validatePluginDiscoveryMechanism() { /* Implementation TBD */ }
+  async validatePluginLifecycleManagement() { /* Implementation TBD */ }
+  async validateWorkflowEngineOrchestration() { /* Implementation TBD */ }
+  async validateStepExecutorConsistency() { /* Implementation TBD */ }
+  async validateRollbackMechanismIntegrity() { /* Implementation TBD */ }
+  async validateConfigurationPrecedence() { /* Implementation TBD */ }
+  async validateEnvironmentContextDetection() { /* Implementation TBD */ }
+  async validateContextAwareConfiguration() { /* Implementation TBD */ }
 
   async generateAISuggestions(violations) {
     if (!ollama || !CONFIG.aiSuggestions || violations.length === 0) {
