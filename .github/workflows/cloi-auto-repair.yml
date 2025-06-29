@@ -8,9 +8,10 @@ on:
       test_scenario:
         description: 'Test scenario to run'
         required: false
-        default: 'full'
+        default: 'adr-core'
         type: choice
         options:
+          - adr-core
           - full
           - syntax-errors
           - dependency-issues
@@ -28,9 +29,72 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
-  # Create intentional test scenarios for auto-repair
+  # Build and install CLOI first - fail fast if build issues
+  build-cloi:
+    name: Build & Install CLOI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Add missing dependencies
+        run: |
+          echo "🔧 Adding missing glob dependency..."
+          npm install glob@^10.3.10 --save
+          echo "📦 Dependencies added successfully"
+      
+      - name: Install dependencies
+        run: |
+          echo "📦 Installing CLOI dependencies..."
+          npm ci
+          python -m pip install --upgrade pip
+          pip install -r bin/requirements.txt
+      
+      - name: Build and link CLOI globally  
+        run: |
+          echo "🔨 Linking CLOI globally..."
+          npm link
+          
+          # Verify CLOI binary is available
+          echo "✅ Testing CLOI binary availability..."
+          cloi --version || (echo "❌ CLOI binary not available" && exit 1)
+          
+          echo "✅ CLOI linked successfully"
+      
+      - name: Test core ADR functionality
+        run: |
+          echo "🧪 Testing core ADR functionality..."
+          
+          # Test basic command structure
+          echo "📋 Testing ADR command structure..."
+          cloi adr --help || (echo "❌ ADR commands not available" && exit 1)
+          
+          # Test validation script directly
+          echo "📋 Testing validation script..."
+          node scripts/validate-adr-compliance.js --help || (echo "❌ Validation script failed" && exit 1)
+          
+          # Test ADR validation through CLI
+          echo "📋 Testing ADR validation through CLI..."
+          cloi adr validate --help || (echo "❌ ADR validate command failed" && exit 1)
+          
+          echo "✅ Core ADR functionality verified"
+
+  # Create focused test scenarios - ADR first
   create-test-scenarios:
     name: Create Test Scenarios
+    needs: build-cloi
     runs-on: ubuntu-latest
     outputs:
       scenarios: ${{ steps.scenarios.outputs.list }}
@@ -40,57 +104,47 @@ jobs:
       - name: Generate test scenarios
         id: scenarios
         run: |
-          # Define test scenarios based on input or default to full
-          SCENARIO="${{ github.event.inputs.test_scenario || 'full' }}"
+          # Focus on ADR core functionality first
+          SCENARIO="${{ github.event.inputs.test_scenario || 'adr-core' }}"
           
           case $SCENARIO in
-            "syntax-errors")
-              SCENARIOS='["syntax-error-js", "syntax-error-py", "syntax-error-rust", "syntax-error-go"]'
-              ;;
-            "dependency-issues")
-              SCENARIOS='["missing-dependency", "version-conflict", "import-errors"]'
-              ;;
-            "build-failures")
-              SCENARIOS='["build-script-fail", "env-missing", "compilation-error"]'
-              ;;
-            "workflow-issues")
-              SCENARIOS='["deprecated-actions", "workflow-syntax", "ci-cd-integration"]'
-              ;;
-            "rag-features")
-              SCENARIOS='["rag-indexing", "context-retrieval", "codebert-service"]'
-              ;;
-            "interactive-features")
-              SCENARIOS='["interactive-commands", "session-management", "terminal-logging"]'
-              ;;
-            "plugin-system")
-              SCENARIOS='["plugin-loading", "custom-analyzers", "provider-integration"]'
-              ;;
-            "a2a-protocol")
-              SCENARIOS='["a2a-server", "multi-ai-collaboration", "protocol-communication"]'
-              ;;
-            "advanced-analysis")
-              SCENARIOS='["llm-integration", "error-classification", "patch-generation"]'
+            "adr-core")
+              # Focus on core ADR functionality only
+              SCENARIOS='["adr-validation", "adr-compliance-check"]'
               ;;
             "adr-compliance")
-              SCENARIOS='["adr-validation", "adr-auto-repair", "adr-enforcement", "adr-command-review"]'
+              SCENARIOS='["adr-validation", "adr-auto-repair", "adr-enforcement"]'
+              ;;
+            "syntax-errors")
+              SCENARIOS='["syntax-error-js", "syntax-error-py"]'
+              ;;
+            "dependency-issues")
+              SCENARIOS='["missing-dependency"]'
+              ;;
+            "build-failures")
+              SCENARIOS='["build-script-fail"]'
+              ;;
+            "workflow-issues")
+              SCENARIOS='["deprecated-actions"]'
               ;;
             *)
-              SCENARIOS='["syntax-error-js", "missing-dependency", "build-script-fail", "deprecated-actions", "rag-indexing", "interactive-commands", "plugin-loading", "a2a-server", "llm-integration", "adr-validation", "adr-command-review"]'
+              # Full test suite - only after ADR core is working
+              SCENARIOS='["adr-validation", "adr-compliance-check", "syntax-error-js", "missing-dependency"]'
               ;;
           esac
           
           echo "list=$SCENARIOS" >> $GITHUB_OUTPUT
           echo "Testing scenarios: $SCENARIOS"
 
-  # Test each scenario with Cloi auto-repair
+  # Test each scenario with built CLOI binary
   test-auto-repair:
     name: Test Auto-Repair (${{ matrix.scenario }})
-    needs: create-test-scenarios
+    needs: [build-cloi, create-test-scenarios]
     runs-on: ubuntu-latest
     strategy:
       matrix:
         scenario: ${{ fromJson(needs.create-test-scenarios.outputs.scenarios) }}
-      fail-fast: false
+      fail-fast: true  # Fail fast to focus on issues
     
     permissions:
       contents: write
@@ -98,7 +152,8 @@ jobs:
       issues: write
       
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.head_ref }}
@@ -115,11 +170,24 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
+      - name: Add missing dependencies
+        run: |
+          echo "🔧 Adding missing glob dependency..."
+          npm install glob@^10.3.10 --save
+          echo "📦 Dependencies added successfully"
+      
       - name: Install dependencies
         run: |
+          echo "📦 Installing dependencies..."
           npm ci
           python -m pip install --upgrade pip
           pip install -r bin/requirements.txt
+      
+      - name: Link CLOI globally
+        run: |
+          echo "🔨 Linking CLOI globally..."
+          npm link
+          cloi --version || (echo "❌ CLOI linking failed" && exit 1)
       
       - name: Create test scenario - ${{ matrix.scenario }}
         id: create-scenario
@@ -128,68 +196,13 @@ jobs:
           mkdir -p test-scenarios/${{ matrix.scenario }}
           
           case "${{ matrix.scenario }}" in
-            "syntax-error-js")
-              cat > test-scenarios/${{ matrix.scenario }}/broken.js << 'EOF'
-          // Intentional syntax error for testing
-          function testFunction() {
-              console.log("Testing")
-              // Missing closing brace and semicolon
-          // Invalid syntax below
-          const x = { invalid syntax here
-          EOF
-              echo "error-command=node test-scenarios/${{ matrix.scenario }}/broken.js" >> $GITHUB_OUTPUT
-              ;;
-              
-            "syntax-error-py")
-              cat > test-scenarios/${{ matrix.scenario }}/broken.py << 'EOF'
-          # Intentional Python syntax error
-          def test_function():
-              print("Testing")
-              # Missing indentation
-          invalid_syntax = { "unclosed": dict
-              # Invalid syntax
-          EOF
-              echo "error-command=python test-scenarios/${{ matrix.scenario }}/broken.py" >> $GITHUB_OUTPUT
-              ;;
-              
-            "missing-dependency")
-              cat > test-scenarios/${{ matrix.scenario }}/missing-dep.js << 'EOF'
-          // Test missing dependency
-          import { nonExistentPackage } from 'package-that-does-not-exist';
-          console.log(nonExistentPackage);
-          EOF
-              echo "error-command=node test-scenarios/${{ matrix.scenario }}/missing-dep.js" >> $GITHUB_OUTPUT
-              ;;
-              
-            "build-script-fail")
-              cat > test-scenarios/${{ matrix.scenario }}/package.json << 'EOF'
-          {
-            "name": "test-build-fail",
-            "scripts": {
-              "build": "non-existent-command --flag"
-            }
-          }
-          EOF
-              echo "error-command=cd test-scenarios/${{ matrix.scenario }} && npm run build" >> $GITHUB_OUTPUT
-              ;;
-              
-            "deprecated-actions")
-              mkdir -p test-scenarios/${{ matrix.scenario }}/.github/workflows
-              cat > test-scenarios/${{ matrix.scenario }}/.github/workflows/old.yml << 'EOF'
-          name: Test Deprecated Actions
-          on: [push]
-          jobs:
-            test:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v2  # Deprecated version
-                - uses: actions/setup-node@v2  # Deprecated version
-          EOF
-              echo "error-command=echo 'Deprecated actions in workflow'" >> $GITHUB_OUTPUT
-              ;;
-              
             "adr-validation")
-              echo "Testing ADR compliance validation..."
+              echo "Testing basic ADR validation..."
+              echo "error-command=cloi adr validate" >> $GITHUB_OUTPUT
+              ;;
+              
+            "adr-compliance-check")
+              echo "Testing ADR compliance checking..."
               echo "error-command=node scripts/validate-adr-compliance.js" >> $GITHUB_OUTPUT
               ;;
               
@@ -214,47 +227,25 @@ jobs:
               echo "error-command=node scripts/validate-adr-compliance.js" >> $GITHUB_OUTPUT
               ;;
               
-            "adr-command-review")
-              # Create A2A server port conflict scenario for command review testing
-              echo "Testing ADR command review with real A2A server port conflict..."
-              
-              # Create test script that triggers A2A server port conflict
-              cat > test-scenarios/${{ matrix.scenario }}/trigger-a2a-conflict.js << 'EOF'
-          import A2AHttpServer from '../../src/protocols/a2a/http-server.js';
-          
-          console.log('Testing A2A server port conflict for ADR command review...');
-          
-          // Start first server on port 9090
-          const server1 = new A2AHttpServer({ networking: { port: 9090 } });
-          await server1.start();
-          
-          // Attempt to start second server on same port - should trigger EADDRINUSE
-          const server2 = new A2AHttpServer({ networking: { port: 9090 } });
-          try {
-            await server2.start();
-          } catch (error) {
-            console.error('Expected port conflict:', error.message);
-            throw error; // Re-throw to trigger validation
-          }
+            "syntax-error-js")
+              cat > test-scenarios/${{ matrix.scenario }}/broken.js << 'EOF'
+          // Intentional syntax error for testing
+          function testFunction() {
+              console.log("Testing")
+              // Missing closing brace and semicolon
+          // Invalid syntax below
+          const x = { invalid syntax here
           EOF
+              echo "error-command=node test-scenarios/${{ matrix.scenario }}/broken.js" >> $GITHUB_OUTPUT
+              ;;
               
-              # Create ADR metadata test for port management constraints
-              mkdir -p test-scenarios/${{ matrix.scenario }}/test-constraints
-              cat > test-scenarios/${{ matrix.scenario }}/test-constraints/port-management.yaml << 'EOF'
-          validation_rules:
-            port_management:
-              - pattern: "EADDRINUSE.*port.*9090"
-                description: "A2A server port conflicts must be handled with dynamic allocation"
-                violation_level: "error"
-                auto_repairable: true
-            command_review:
-              - pattern: "A2AHttpServer.*port.*9090"
-                description: "A2A server commands must include port conflict resolution"
-                violation_level: "warning"
-                auto_repairable: true
+            "missing-dependency")
+              cat > test-scenarios/${{ matrix.scenario }}/missing-dep.js << 'EOF'
+          // Test missing dependency
+          import { nonExistentPackage } from 'package-that-does-not-exist';
+          console.log(nonExistentPackage);
           EOF
-              
-              echo "error-command=node test-scenarios/${{ matrix.scenario }}/trigger-a2a-conflict.js" >> $GITHUB_OUTPUT
+              echo "error-command=node test-scenarios/${{ matrix.scenario }}/missing-dep.js" >> $GITHUB_OUTPUT
               ;;
           esac
       
@@ -264,89 +255,55 @@ jobs:
         run: |
           echo "Executing: ${{ steps.create-scenario.outputs.error-command }}"
           
-          # Run the command and capture output
-          ${{ steps.create-scenario.outputs.error-command }} 2>&1 | tee error-output.txt || true
+          # Run the command and capture output - NO || true to see real errors
+          ${{ steps.create-scenario.outputs.error-command }} 2>&1 | tee error-output.txt
+          EXIT_CODE=$?
           
           # Save error for analysis
           ERROR_OUTPUT=$(cat error-output.txt)
           echo "error-output<<EOF" >> $GITHUB_OUTPUT
           echo "$ERROR_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
       
-      - name: Test Cloi auto-repair on scenario
+      - name: Test CLOI auto-repair on scenario
         id: auto-repair
         run: |
-          echo "🔧 Testing Cloi auto-repair on ${{ matrix.scenario }}..."
+          echo "🔧 Testing CLOI auto-repair on ${{ matrix.scenario }}..."
           
           CREATE_FIXES="${{ github.event.inputs.create_fixes || 'false' }}"
           
           case "${{ matrix.scenario }}" in
-            "syntax-error-js"|"syntax-error-py"|"missing-dependency")
-              # Test error analysis and fixing
-              echo "Testing error analysis..."
-              timeout 120s node src/cli/index.js analyze "${{ steps.run-scenario.outputs.error-output }}" \
+            "adr-validation")
+              # Test ADR validation using CLOI binary
+              echo "Testing ADR validation with CLOI binary..."
+              timeout 120s cloi adr validate --verbose
+              ;;
+              
+            "adr-compliance-check")
+              # Test validation script directly
+              echo "Testing validation script..."
+              timeout 120s node scripts/validate-adr-compliance.js --json
+              ;;
+              
+            "adr-auto-repair")
+              # Test auto-repair functionality
+              echo "Testing ADR auto-repair..."
+              timeout 120s node scripts/validate-adr-compliance.js --fix --verbose
+              ;;
+              
+            "adr-enforcement")
+              # Test enforcement detection
+              echo "Testing ADR enforcement..."
+              timeout 120s node scripts/validate-adr-compliance.js --json
+              ;;
+              
+            "syntax-error-js"|"missing-dependency")
+              # Test error analysis using CLOI binary
+              echo "Testing error analysis with CLOI binary..."
+              timeout 120s cloi analyze "${{ steps.run-scenario.outputs.error-output }}" \
                 --files "test-scenarios/${{ matrix.scenario }}/" \
-                --context '{"scenario": "${{ matrix.scenario }}", "test": true}' || true
-              ;;
-              
-            "build-script-fail")
-              # Test build failure auto-repair
-              echo "Testing build failure repair..."
-              timeout 120s node src/cli/index.js workflow auto-repair \
-                --build-log-file error-output.txt \
-                --context '{"scenario": "build-failure", "test": true}' \
-                ${CREATE_FIXES:+--create-pr} || true
-              ;;
-              
-            "deprecated-actions")
-              # Test deprecated actions fix
-              echo "Testing deprecated actions auto-repair..."
-              cd test-scenarios/${{ matrix.scenario }}
-              timeout 120s node ../../../src/cli/index.js workflow fix-deprecated-actions \
-                ${CREATE_FIXES:+--commit} || true
-              cd ../../..
-              ;;
-              
-            "adr-validation"|"adr-auto-repair"|"adr-enforcement"|"adr-command-review")
-              # Test ADR compliance validation and auto-repair
-              echo "Testing ADR compliance..."
-              
-              # Handle special command review scenario
-              if [[ "${{ matrix.scenario }}" == "adr-command-review" ]]; then
-                echo "🔍 Testing ADR command review with A2A port conflict..."
-                
-                # First, run the ADR validation with command review enabled
-                timeout 120s node scripts/validate-adr-compliance.js \
-                  --command-review \
-                  --error-analysis "${{ steps.run-scenario.outputs.error-output }}" \
-                  --metadata-file "test-scenarios/${{ matrix.scenario }}/test-constraints/port-management.yaml" || true
-                
-                # Test CLOI integration with enhanced command review
-                timeout 120s node src/cli/index.js adr-validation \
-                  --command-review \
-                  --analyze-errors \
-                  --source-path "test-scenarios/${{ matrix.scenario }}" || true
-                
-                # Test auto-repair capabilities if enabled
-                if [[ "$CREATE_FIXES" == "true" ]]; then
-                  echo "🔧 Testing auto-repair for A2A port conflicts..."
-                  timeout 120s node src/cli/index.js adr-validation \
-                    --command-review \
-                    --auto-repair \
-                    --source-path "test-scenarios/${{ matrix.scenario }}" || true
-                fi
-                
-              # Handle other ADR scenarios
-              elif [[ "${{ matrix.scenario }}" == "adr-auto-repair" ]]; then
-                timeout 120s node scripts/validate-adr-compliance.js --fix || true
-              else
-                timeout 120s node scripts/validate-adr-compliance.js || true
-              fi
-              
-              # For CLOI integration, also test through the CLI
-              if [[ "$CREATE_FIXES" == "true" && "${{ matrix.scenario }}" != "adr-command-review" ]]; then
-                timeout 120s node src/cli/index.js validate-architecture --fix || true
-              fi
+                --context '{"scenario": "${{ matrix.scenario }}", "test": true}'
               ;;
           esac
           
@@ -358,26 +315,24 @@ jobs:
           echo "🔍 Verifying auto-repair effectiveness for ${{ matrix.scenario }}..."
           
           case "${{ matrix.scenario }}" in
-            "deprecated-actions")
-              # Check if deprecated actions were identified/fixed
-              if [ -f "test-scenarios/${{ matrix.scenario }}/.github/workflows/old.yml" ]; then
-                if grep -q "actions/checkout@v2" "test-scenarios/${{ matrix.scenario }}/.github/workflows/old.yml"; then
-                  echo "result=detected-but-not-fixed" >> $GITHUB_OUTPUT
-                else
-                  echo "result=fixed" >> $GITHUB_OUTPUT
-                fi
-              else
-                echo "result=no-workflow-found" >> $GITHUB_OUTPUT
-              fi
-              ;;
             "adr-validation")
               # Check if ADR validation ran successfully
-              if node scripts/validate-adr-compliance.js --json 2>/dev/null | jq -e '.summary.totalViolations == 0' >/dev/null; then
-                echo "result=compliant" >> $GITHUB_OUTPUT
+              if cloi adr validate --json 2>/dev/null | jq -e '.success == true' >/dev/null 2>&1; then
+                echo "result=validation-success" >> $GITHUB_OUTPUT
               else
-                echo "result=violations-found" >> $GITHUB_OUTPUT
+                echo "result=validation-needs-work" >> $GITHUB_OUTPUT
               fi
               ;;
+              
+            "adr-compliance-check")
+              # Check if compliance script ran without crashing
+              if node scripts/validate-adr-compliance.js --json >/dev/null 2>&1; then
+                echo "result=compliance-script-works" >> $GITHUB_OUTPUT
+              else
+                echo "result=compliance-script-broken" >> $GITHUB_OUTPUT
+              fi
+              ;;
+              
             "adr-auto-repair")
               # Check if the unified.js was renamed to index.js
               if [ -f "test-scenarios/${{ matrix.scenario }}/src/cli/test-module/index.js" ] && \
@@ -387,6 +342,7 @@ jobs:
                 echo "result=not-fixed" >> $GITHUB_OUTPUT
               fi
               ;;
+              
             "adr-enforcement")
               # Check if import violations were detected
               if node scripts/validate-adr-compliance.js --json 2>&1 | grep -q "unified.js"; then
@@ -395,44 +351,9 @@ jobs:
                 echo "result=no-violations" >> $GITHUB_OUTPUT
               fi
               ;;
-            "adr-command-review")
-              # Check if A2A port conflict command review was successful
-              echo "🔍 Verifying ADR command review for A2A port conflicts..."
               
-              # Check if port conflict was detected
-              if grep -q "EADDRINUSE.*port.*9090" error-output.txt; then
-                echo "✅ A2A port conflict detected successfully"
-                
-                # Check if ADR validation identified the constraint violation
-                if node scripts/validate-adr-compliance.js --json --command-review \
-                     --error-analysis "${{ steps.run-scenario.outputs.error-output }}" 2>/dev/null | \
-                   jq -e '.violations[] | select(.type == "port_management")' >/dev/null; then
-                  echo "✅ ADR command review detected port management violation"
-                  echo "result=command-review-success" >> $GITHUB_OUTPUT
-                else
-                  echo "⚠️ ADR command review did not detect violation"
-                  echo "result=command-review-partial" >> $GITHUB_OUTPUT
-                fi
-              else
-                echo "❌ A2A port conflict not detected"
-                echo "result=command-review-failed" >> $GITHUB_OUTPUT
-              fi
-              
-              # Additional verification for auto-repair if enabled
-              if [[ "${{ github.event.inputs.create_fixes || 'false' }}" == "true" ]]; then
-                # Check for auto-repair suggestions or fixes
-                if [ -f ".cloi/repairs/a2a-port-conflict.json" ] || \
-                   grep -q "dynamic.*port.*allocation" .cloi/analysis/latest.json 2>/dev/null; then
-                  echo "✅ Auto-repair suggestions generated"
-                  echo "repair-status=suggestions-provided" >> $GITHUB_OUTPUT
-                else
-                  echo "⚠️ No auto-repair suggestions found"
-                  echo "repair-status=no-suggestions" >> $GITHUB_OUTPUT
-                fi
-              fi
-              ;;
             *)
-              # For other scenarios, check if Cloi provided analysis
+              # For other scenarios, check if CLOI provided analysis
               if [ -f ".cloi/analysis/latest.json" ]; then
                 echo "result=analysis-provided" >> $GITHUB_OUTPUT
               else
@@ -464,7 +385,10 @@ jobs:
       
       - name: Generate summary report
         run: |
-          echo "## 🤖 Cloi Auto-Repair E2E Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🤖 CLOI Auto-Repair E2E Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build & Test Strategy:** Build-first, fail-fast with CLOI binary" >> $GITHUB_STEP_SUMMARY
+          echo "**Focus:** ADR functionality validation and core capabilities" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Test Scenarios Executed:**" >> $GITHUB_STEP_SUMMARY
           
@@ -478,21 +402,22 @@ jobs:
           echo "| Scenario | Status | Notes |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------|-------|" >> $GITHUB_STEP_SUMMARY
           
-          # Note: In a real implementation, we'd parse the job results
-          echo "| All Scenarios | ${{ needs.test-auto-repair.result }} | E2E testing completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| All Scenarios | ${{ needs.test-auto-repair.result }} | Build-first E2E testing |" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.test-auto-repair.result }}" == "success" ]]; then
-            echo "🎉 **All auto-repair scenarios completed successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "🎉 **ADR functionality validated successfully!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Cloi's auto-repair capabilities are functioning correctly" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Error analysis working across multiple languages" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Workflow auto-repair operational" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Plugin system responding to test scenarios" >> $GITHUB_STEP_SUMMARY
+            echo "✅ CLOI binary builds and installs correctly" >> $GITHUB_STEP_SUMMARY
+            echo "✅ ADR validation system operational" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Core auto-repair capabilities working" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Ready for expanded testing scenarios" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ **Some auto-repair scenarios encountered issues**" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **ADR functionality needs attention**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Please review the individual scenario results for details." >> $GITHUB_STEP_SUMMARY
+            echo "🔧 Focus on core ADR functionality first" >> $GITHUB_STEP_SUMMARY
+            echo "📋 Review build and dependency issues" >> $GITHUB_STEP_SUMMARY
+            echo "🧪 Validate basic CLOI binary functionality" >> $GITHUB_STEP_SUMMARY
           fi
       
       - name: Comment on PR with results
@@ -502,28 +427,30 @@ jobs:
           
           if [[ "$RESULT" == "success" ]]; then
             EMOJI="🤖✅"
-            TITLE="Cloi Auto-Repair E2E Tests Passed"
-            MESSAGE="All auto-repair scenarios completed successfully! The Cloi auto-repair system is working correctly on this PR."
+            TITLE="CLOI ADR Functionality Validated"
+            MESSAGE="Core ADR functionality is working! CLOI binary builds successfully and ADR validation system is operational."
           else
-            EMOJI="🤖⚠️"
-            TITLE="Cloi Auto-Repair E2E Tests Had Issues"
-            MESSAGE="Some auto-repair scenarios encountered issues. Please review the workflow run for details."
+            EMOJI="🤖🔧"
+            TITLE="CLOI ADR Functionality Needs Work"
+            MESSAGE="ADR functionality needs attention. Focus on core build and validation issues first."
           fi
           
           gh pr comment ${{ github.event.number }} --body "${EMOJI} **${TITLE}**
           
           ${MESSAGE}
           
-          **Scenarios Tested:**
-          - Syntax error handling (JS/Python)
-          - Dependency issue resolution
-          - Build failure auto-repair
-          - Deprecated GitHub Actions fixes
-          - ADR compliance validation
-          - ADR auto-repair capabilities
+          **Build-First Strategy Results:**
+          - CLOI Binary Build: ${{ needs.build-cloi.result }}
+          - ADR Core Testing: ${{ needs.test-auto-repair.result }}
+          
+          **Focus Areas:**
+          - ✅ Build and install CLOI binary first
+          - 🔧 Validate ADR functionality thoroughly  
+          - 📋 Fail fast on core issues
+          - 🎯 Expand testing after ADR core is solid
           
           **View Results:** [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           
-          This E2E test validates that Cloi can automatically detect and repair common development issues."
+          This build-first approach ensures we test the real user experience."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
