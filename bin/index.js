@@ -8,5 +8,5 @@
  *
  * ----------------------------------------------------------------------------*/
 
-// This file loads the unified CLI implementation
-import '../src/cli/unified.js';
+// This file loads the CLI implementation
+import '../src/cli/index.js';

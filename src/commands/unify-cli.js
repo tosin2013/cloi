@@ -84,7 +84,7 @@ export class CLIUnificationRepair {
       const files = await fs.readdir(cliDir);
       
       for (const file of files) {
-        if (file.endsWith('.js') && file !== 'unified.js') {
+        if (file.endsWith('.js') && file !== 'index.js') {
           cliFiles.push(path.join(cliDir, file));
         }
       }
@@ -110,7 +110,7 @@ export class CLIUnificationRepair {
     // Check if unified CLI exists
     let hasUnifiedCLI = false;
     try {
-      await fs.access('src/cli/unified.js');
+      await fs.access('src/cli/index.js');
       hasUnifiedCLI = true;
     } catch (error) {
       // Unified CLI doesn't exist yet
@@ -119,8 +119,8 @@ export class CLIUnificationRepair {
     // Determine if CLI is unified
     const isUnified = hasUnifiedCLI && 
       binEntryPoint && 
-      binEntryPoint.includes('unified.js') &&
-      cliFiles.length <= 1; // Only unified.js should exist
+      binEntryPoint.includes('index.js') &&
+      cliFiles.length <= 1; // Only index.js should exist
 
     // Add issues based on analysis
     if (cliFiles.length > 1 && !hasUnifiedCLI) {
@@ -133,11 +133,11 @@ export class CLIUnificationRepair {
     if (!hasUnifiedCLI) {
       issues.push({
         type: 'missing-unified-cli',
-        description: 'No unified CLI file found at src/cli/unified.js'
+        description: 'No unified CLI file found at src/cli/index.js'
       });
     }
 
-    if (binEntryPoint && !binEntryPoint.includes('unified.js')) {
+    if (binEntryPoint && !binEntryPoint.includes('index.js')) {
       issues.push({
         type: 'wrong-entry-point',
         description: 'bin/index.js does not point to unified CLI'
@@ -163,7 +163,7 @@ export class CLIUnificationRepair {
     }
 
     // Fix 2: Update bin/index.js to point to unified CLI
-    if (structure.binEntryPoint && !structure.binEntryPoint.includes('unified.js')) {
+    if (structure.binEntryPoint && !structure.binEntryPoint.includes('index.js')) {
       await this.updateBinEntryPoint();
     }
 
@@ -178,7 +178,7 @@ export class CLIUnificationRepair {
    */
   async ensureUnifiedCLI() {
     try {
-      await fs.access('src/cli/unified.js');
+      await fs.access('src/cli/index.js');
       console.log(chalk.green('  ✓ Unified CLI already exists'));
       
       this.fixedIssues.push({
@@ -188,7 +188,7 @@ export class CLIUnificationRepair {
       });
     } catch (error) {
       console.log(chalk.red('  ❌ Unified CLI is missing - this should have been created earlier'));
-      throw new Error('Unified CLI file not found. Please ensure src/cli/unified.js exists.');
+      throw new Error('Unified CLI file not found. Please ensure src/cli/index.js exists.');
     }
   }
 
@@ -200,7 +200,7 @@ export class CLIUnificationRepair {
     try {
       const binContent = await fs.readFile('bin/index.js', 'utf8');
       
-      if (binContent.includes('unified.js')) {
+      if (binContent.includes('index.js')) {
         console.log(chalk.green('  ✓ bin/index.js already points to unified CLI'));
         
         this.fixedIssues.push({
@@ -227,7 +227,7 @@ export class CLIUnificationRepair {
       await fs.mkdir(backupDir, { recursive: true });
       
       for (const file of cliFiles) {
-        if (!file.includes('unified.js')) {
+        if (!file.includes('index.js')) {
           const fileName = path.basename(file);
           const backupPath = path.join(backupDir, fileName);
           
@@ -248,13 +248,13 @@ export class CLIUnificationRepair {
 
 These files have been backed up as part of the CLI unification process.
 
-The CLOI CLI has been unified into \`src/cli/unified.js\` which combines:
+The CLOI CLI has been unified into \`src/cli/index.js\` which combines:
 - Interactive terminal interface (from index.js)
 - Modular command-line interface (from modular.js)
 - All enhanced features and workflows
 
 ## Files in this backup:
-${cliFiles.filter(f => !f.includes('unified.js')).map(f => `- ${path.basename(f)}`).join('\n')}
+${cliFiles.filter(f => !f.includes('index.js')).map(f => `- ${path.basename(f)}`).join('\n')}
 
 ## Next Steps:
 1. Test the unified CLI thoroughly
@@ -328,7 +328,7 @@ The unified CLI provides both interactive and command-line interfaces.`;
       }
     } else if (result.alreadyUnified) {
       console.log(chalk.cyan('\n💡 Your CLI is already unified! 🎉'));
-      console.log('✅ Using unified CLI at src/cli/unified.js');
+      console.log('✅ Using unified CLI at src/cli/index.js');
       console.log('✅ Entry point correctly configured');
     }
 

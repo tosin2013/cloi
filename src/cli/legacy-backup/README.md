@@ -2,7 +2,7 @@
 
 These files have been backed up as part of the CLI unification process.
 
-The CLOI CLI has been unified into `src/cli/unified.js` which combines:
+The CLOI CLI has been unified into `src/cli/index.js` which combines:
 - Interactive terminal interface (from index.js)
 - Modular command-line interface (from modular.js)
 - All enhanced features and workflows
