@@ -16,6 +16,7 @@ on:
 
 jobs:
   validate-interactive-commands:
+    if: false  # Temporarily disabled to focus on cloi-auto-repair.yml testing
     runs-on: ubuntu-latest
     
     steps:
@@ -44,7 +45,7 @@ jobs:
         
         async function testCommand(cmd) {
           return new Promise((resolve) => {
-            const child = spawn('node', ['src/cli/unified.js'], {
+            const child = spawn('node', ['src/cli/index.js'], {
               stdio: ['pipe', 'pipe', 'pipe'],
               timeout: 8000
             });

@@ -1,0 +1,77 @@
+name: Auto-Repair CI Failures
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main, master, develop]
+
+jobs:
+  auto-repair:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install Cloi
+        run: npm install -g @cloi/cli
+
+      - name: Download failure logs
+        id: download-logs
+        run: |
+          gh run download ${{ github.event.workflow_run.id }} --dir ./failure-logs || true
+          echo "log-dir=./failure-logs" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Cloi Auto-Repair
+        id: auto-repair
+        run: |
+          cat > failure-context.json << EOF
+          {
+            "trigger": "ci-failure",
+            "failureType": "test-failure",
+            "workflowName": "${{ github.event.workflow_run.name }}",
+            "repository": "cloi-ai/cloi",
+            "branch": "${{ github.event.workflow_run.head_branch }}",
+            "commit": "${{ github.event.workflow_run.head_sha }}",
+            "runUrl": "${{ github.event.workflow_run.html_url }}",
+            "createPR": true,
+            "local": false,
+            "projectType": "nodejs",
+            "packageManager": "npm"
+          }
+          EOF
+          
+          cloi workflow auto-repair \
+            --context failure-context.json \
+            --build-log-file ./failure-logs \
+            --create-pr || echo "Auto-repair completed with issues"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on completion
+        if: always()
+        run: |
+          if [[ "${{ steps.auto-repair.outcome }}" == "success" ]]; then
+            echo "🤖 Auto-repair completed successfully"
+          else
+            echo "🚨 Auto-repair encountered issues"
+          fi

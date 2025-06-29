@@ -1,0 +1,42 @@
+name: Deploy
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Cloi
+        run: npm install -g @cloi/cli
+
+      - name: Build Docker image
+        run: docker build -t ${{ github.repository }}:${{ github.sha }} .
+
+      - name: Run deployment checks
+        run: |
+          cloi workflow run deployment-check \
+            --context '{"target": "production", "image": "${{ github.repository }}:${{ github.sha }}"}'
+
+      # Add your specific deployment steps here
+      - name: Deploy to production
+        run: |
+          echo "Add your deployment commands here"
+          # Examples:
+          # - Deploy to Heroku, Vercel, Netlify
+          # - Push to container registry
+          # - Deploy to Kubernetes

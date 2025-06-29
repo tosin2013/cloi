@@ -1,0 +1,59 @@
+name: Code Review Assistant
+on:
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+
+jobs:
+  process-review:
+    if: |
+      (github.event_name == 'pull_request_review' && github.event.review.state == 'changes_requested') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@cloi'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      
+    steps:
+      - name: Get PR information
+        id: pr-info
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request_review" ]]; then
+            echo "pr-number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "pr-ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr-number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+            # Get PR ref from issue
+            PR_REF=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }} --jq .head.ref)
+            echo "pr-ref=${PR_REF}" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ steps.pr-info.outputs.pr-ref }}
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Cloi
+        run: npm install -g @cloi/cli
+
+      - name: Process code review
+        run: |
+          cloi workflow code-review \
+            --pr-number ${{ steps.pr-info.outputs.pr-number }} \
+            --repository ${{ github.repository }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

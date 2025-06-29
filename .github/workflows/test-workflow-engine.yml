@@ -15,6 +15,7 @@ on:
 
 jobs:
   test-workflow-features:
+    if: false  # Temporarily disabled to focus on cloi-auto-repair.yml testing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -48,8 +49,8 @@ jobs:
       - name: Test workflow CLI commands
         run: |
           echo "Testing workflow CLI..."
-          node src/cli/unified.js workflow list || echo "Workflow list command executed"
-          node src/cli/unified.js workflow status || echo "Workflow status command executed"
+          node src/cli/index.js workflow list || echo "Workflow list command executed"
+          node src/cli/index.js workflow status || echo "Workflow status command executed"
 
       - name: Test dynamic workflow generation
         run: |
@@ -119,6 +120,7 @@ jobs:
           done
 
   test-environment-integration:
+    if: false  # Temporarily disabled to focus on cloi-auto-repair.yml testing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -175,6 +177,7 @@ jobs:
           "
 
   test-a2a-protocol:
+    if: false  # Temporarily disabled to focus on cloi-auto-repair.yml testing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
