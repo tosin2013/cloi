@@ -9,6 +9,18 @@
 
 The CLOI system requires sophisticated workflow orchestration capabilities to manage complex multi-step operations, coordinate between different plugins and services, handle error recovery, and provide rollback mechanisms. The workflow engine must operate as a central orchestrator within the Workflow Management Domain while maintaining clear boundaries with other domains.
 
+**EVOLUTION: Self-Implementing Workflow Orchestration**
+
+Building on ADR-036 (ADR-Driven Testing Architecture), the workflow engine must evolve to support **autonomous feature implementation** through AI-powered workflow generation. The engine should not only execute predefined workflows but also:
+
+1. **Generate GitHub Actions workflows** dynamically based on ADR implementation requirements
+2. **Orchestrate complex feature implementations** across multiple development phases
+3. **Coordinate AI-powered code generation** with validation and integration steps
+4. **Manage autonomous development cycles** with rollback and quality gates
+5. **Track implementation progress** and provide comprehensive metrics
+
+This enables CLOI to implement its own features autonomously while maintaining architectural compliance and quality standards.
+
 ### Domain-Driven Design Context
 
 **Bounded Context:** Workflow Management Domain  
@@ -55,34 +67,48 @@ The CLOI system requires sophisticated workflow orchestration capabilities to ma
 
 **Chosen Option:** Event-Driven Workflow Engine with Saga Pattern
 
-### Domain Architecture
+### Self-Implementing Workflow Domain Architecture
 
 ```
-Workflow Management Domain
-├── Workflow Engine (Aggregate Root)
+Workflow Management Domain (Self-Implementing)
+├── Workflow Engine (Aggregate Root) ⭐ Enhanced
 │   ├── Workflow Definition (Entity)
 │   ├── Workflow Instance (Entity)
+│   ├── GitHub Actions Generator (Entity) 🆕
+│   ├── Implementation Orchestrator (Entity) 🆕
 │   └── Step Coordinator (Entity)
+├── Implementation Workflows (Value Objects) 🆕
+│   ├── Feature Implementation Workflow
+│   ├── Code Generation Workflow
+│   ├── Validation Workflow
+│   └── Integration Workflow
 ├── Execution State (Value Object)
 │   ├── Workflow State
 │   ├── Step State
+│   ├── Implementation Progress State 🆕
 │   └── Rollback State
-└── Orchestration Services (Domain Services)
+└── Self-Implementing Services (Domain Services) 🆕
+    ├── GitHub Actions Generation Service
+    ├── Implementation Progress Tracking Service
+    ├── AI Workflow Coordination Service
     ├── Step Execution Service
     ├── Rollback Coordination Service
     └── State Persistence Service
 ```
 
-### Technical Implementation
+### Enhanced Technical Implementation (Self-Implementing)
 
 ```javascript
-// Domain: Workflow Management
-// Aggregate: Workflow Engine
+// Domain: Workflow Management (Self-Implementing)
+// Aggregate: Workflow Engine (Enhanced)
 class WorkflowEngine {
   constructor() {
     this.stepCoordinator = new StepCoordinator();
     this.stateManager = new WorkflowStateManager();
     this.rollbackService = new RollbackCoordinationService();
+    this.githubActionsGenerator = new GitHubActionsGenerator(); // 🆕
+    this.implementationOrchestrator = new ImplementationOrchestrator(); // 🆕
+    this.progressTracker = new ImplementationProgressTracker(); // 🆕
   }
 
   async executeWorkflow(workflowDefinition, context) {
@@ -108,6 +134,73 @@ class WorkflowEngine {
     }
   }
 
+  // 🆕 Self-Implementing Enhancement: Generate Implementation Workflows
+  async generateImplementationWorkflow(implementationPlan) {
+    // Domain Event: Implementation Workflow Generation Started
+    const workflowTemplate = await this.selectWorkflowTemplate(implementationPlan);
+    
+    // Generate GitHub Actions workflow
+    const githubWorkflow = await this.githubActionsGenerator.generate({
+      feature: implementationPlan.feature,
+      complexity: implementationPlan.complexity,
+      dependencies: implementationPlan.dependencies,
+      testStrategy: implementationPlan.testStrategy,
+      rollbackTriggers: implementationPlan.rollbackTriggers
+    });
+    
+    // Create implementation orchestration plan
+    const orchestrationPlan = await this.implementationOrchestrator.createPlan({
+      adrRequirements: implementationPlan.adrRequirements,
+      codeGenerationSteps: implementationPlan.codeGenerationSteps,
+      validationSteps: implementationPlan.validationSteps,
+      integrationSteps: implementationPlan.integrationSteps
+    });
+    
+    // Domain Event: Implementation Workflow Generated
+    return {
+      githubWorkflow,
+      orchestrationPlan,
+      workflowId: this.generateWorkflowId(implementationPlan),
+      progressTrackingId: await this.progressTracker.initialize(implementationPlan)
+    };
+  }
+
+  // 🆕 Self-Implementing Enhancement: Execute Implementation Workflow
+  async executeImplementationWorkflow(workflowId, implementationPlan) {
+    // Domain Event: Implementation Execution Started
+    const progressId = await this.progressTracker.trackImplementationProgress(
+      workflowId, 
+      implementationPlan
+    );
+    
+    try {
+      // Phase 1: Code Generation
+      await this.executeCodeGenerationPhase(implementationPlan, progressId);
+      
+      // Phase 2: Testing and Validation
+      await this.executeValidationPhase(implementationPlan, progressId);
+      
+      // Phase 3: Integration and Deployment
+      await this.executeIntegrationPhase(implementationPlan, progressId);
+      
+      // Domain Event: Implementation Completed
+      await this.progressTracker.markCompleted(progressId);
+      
+      return await this.generateImplementationReport(progressId);
+      
+    } catch (error) {
+      // Domain Event: Implementation Failed
+      await this.progressTracker.markFailed(progressId, error);
+      
+      // Execute rollback if required
+      if (implementationPlan.rollbackRequired) {
+        await this.rollbackImplementation(progressId, error);
+      }
+      
+      throw new ImplementationWorkflowError(error, progressId);
+    }
+  }
+
   async rollbackWorkflow(workflowInstance, fromStep) {
     const compensationSteps = this.buildCompensationPlan(workflowInstance, fromStep);
     
@@ -117,22 +210,118 @@ class WorkflowEngine {
   }
 }
 
-// Domain Service: Step Coordination
-class StepCoordinator {
-  async executeStep(workflowInstance, stepDefinition) {
-    const stepContext = this.buildStepContext(workflowInstance, stepDefinition);
+// 🆕 Domain Service: GitHub Actions Generation
+class GitHubActionsGenerator {
+  async generate(implementationSpec) {
+    const workflow = {
+      name: `Implement ${implementationSpec.feature}`,
+      on: {
+        workflow_dispatch: {
+          inputs: {
+            implementation_plan_id: {
+              description: 'Implementation plan ID',
+              required: true,
+              type: 'string'
+            }
+          }
+        },
+        schedule: [{ cron: "0 2 * * *" }] // Daily implementation check
+      },
+      jobs: {
+        implement: {
+          'runs-on': 'ubuntu-latest',
+          steps: await this.generateImplementationSteps(implementationSpec)
+        },
+        validate: {
+          'runs-on': 'ubuntu-latest',
+          needs: 'implement',
+          steps: await this.generateValidationSteps(implementationSpec)
+        },
+        integrate: {
+          'runs-on': 'ubuntu-latest',
+          needs: 'validate',
+          if: 'success()',
+          steps: await this.generateIntegrationSteps(implementationSpec)
+        }
+      }
+    };
     
-    // Coordinate with appropriate domain service
-    switch (stepDefinition.type) {
-      case 'plugin-execution':
-        return await this.pluginExecutionService.execute(stepDefinition, stepContext);
-      case 'llm-interaction':
-        return await this.llmInteractionService.execute(stepDefinition, stepContext);
-      case 'error-analysis':
-        return await this.errorAnalysisService.execute(stepDefinition, stepContext);
-      default:
-        throw new UnknownStepTypeError(stepDefinition.type);
-    }
+    return this.renderWorkflowYAML(workflow);
+  }
+
+  async generateImplementationSteps(spec) {
+    return [
+      { name: 'Checkout Code', uses: 'actions/checkout@v4' },
+      { name: 'Setup CLOI', run: 'npm install && npm link' },
+      { 
+        name: 'Generate Implementation', 
+        run: `cloi generate implementation --feature="${spec.feature}" --adr-based --ai-enhanced` 
+      },
+      { 
+        name: 'Generate Tests', 
+        run: `cloi generate tests --feature="${spec.feature}" --coverage-target=80` 
+      },
+      { 
+        name: 'Generate Documentation', 
+        run: `cloi generate docs --feature="${spec.feature}" --api-docs --user-guide` 
+      }
+    ];
+  }
+}
+
+// 🆕 Domain Service: Implementation Orchestration
+class ImplementationOrchestrator {
+  async createPlan(requirements) {
+    const plan = {
+      phases: [
+        {
+          name: 'code-generation',
+          steps: await this.generateCodeGenerationSteps(requirements),
+          dependencies: [],
+          rollbackStrategy: 'delete-generated-files'
+        },
+        {
+          name: 'validation',
+          steps: await this.generateValidationSteps(requirements),
+          dependencies: ['code-generation'],
+          rollbackStrategy: 'restore-previous-state'
+        },
+        {
+          name: 'integration',
+          steps: await this.generateIntegrationSteps(requirements),
+          dependencies: ['validation'],
+          rollbackStrategy: 'full-system-rollback'
+        }
+      ],
+      estimatedDuration: this.calculateEstimatedDuration(requirements),
+      riskAssessment: await this.assessImplementationRisk(requirements)
+    };
+    
+    return plan;
+  }
+
+  async generateCodeGenerationSteps(requirements) {
+    return [
+      {
+        type: 'ai-code-generation',
+        description: 'Generate core implementation code',
+        aiProvider: 'best-available',
+        context: requirements.adrRequirements,
+        outputPath: requirements.targetFiles
+      },
+      {
+        type: 'pattern-validation',
+        description: 'Validate code follows architectural patterns',
+        patterns: requirements.architecturalPatterns,
+        strict: true
+      },
+      {
+        type: 'test-generation',
+        description: 'Generate comprehensive test suite',
+        testTypes: ['unit', 'integration', 'e2e'],
+        coverageTarget: 80
+      }
+    ];
   }
 }
 ```

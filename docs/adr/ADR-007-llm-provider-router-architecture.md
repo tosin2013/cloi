@@ -10,13 +10,25 @@
 
 The CLOI system requires sophisticated AI model integration to provide intelligent error analysis and fix generation across multiple LLM providers (Ollama, Claude, OpenAI, etc.). Without a coherent **AI/LLM Integration Domain**, CLOI cannot effectively route requests to appropriate models, manage different provider APIs, or provide consistent AI-powered responses regardless of the underlying model infrastructure.
 
+**EVOLUTION: Self-Implementing Code Generation**
+
+Building on ADR-036 (ADR-Driven Testing Architecture), the LLM Provider Router must evolve beyond error analysis to support **autonomous feature implementation** through AI-powered code generation. The router must:
+
+1. **Generate implementation code** based on ADR specifications and architectural patterns
+2. **Apply context-aware code generation** using comprehensive codebase understanding
+3. **Validate generated code** against architectural constraints and quality standards
+4. **Coordinate with workflow engine** for complex multi-step implementation processes
+5. **Learn from implementation patterns** to improve code generation quality over time
+
+This enables CLOI to autonomously implement its own features while maintaining consistency with existing architectural patterns and code quality standards.
+
 ### Domain-Driven Design Context
 
-**Primary Bounded Context:** AI/LLM Integration and Model Management Domain  
-**Secondary Contexts:** Error Analysis (AI-enhanced analysis), CLI Domain (AI command integration)  
-**Aggregate Root:** LLM Provider Router  
-**Domain Language:** Model Selection, Provider Routing, Prompt Management, Response Processing, Model Capabilities, Provider Abstraction  
-**Domain Events:** Model Selected, Provider Routed, Request Sent, Response Received, Fallback Triggered, Model Performance Assessed
+**Primary Bounded Context:** AI/LLM Integration and Model Management Domain (Enhanced for Code Generation)  
+**Secondary Contexts:** Error Analysis (AI-enhanced analysis), CLI Domain (AI command integration), Workflow Management (Implementation Orchestration)  
+**Aggregate Root:** LLM Provider Router (Enhanced)  
+**Domain Language:** Model Selection, Provider Routing, Code Generation, Pattern Recognition, Implementation Context, Quality Validation, Response Processing, Model Capabilities, Provider Abstraction  
+**Domain Events:** Model Selected, Provider Routed, Code Generated, Pattern Applied, Implementation Validated, Request Sent, Response Received, Fallback Triggered, Model Performance Assessed
 
 ### Problem Manifestation
 

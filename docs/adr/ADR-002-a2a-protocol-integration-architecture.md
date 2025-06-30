@@ -1,3 +1,95 @@
+---
+adr_id: "ADR-002"
+title: "A2A Protocol Integration Architecture"
+status: "Accepted"
+date: "2024-01-XX"
+authors: ["Development Team"]
+reviewers: ["Architecture Team", "Protocol Specialists"]
+domain_impact: ["A2A Protocol Domain (Primary)", "CLI Domain (Secondary)", "Error Analysis Domain (Secondary)"]
+
+validation_metadata:
+  constraints:
+    - type: "resource-management"
+      rule: "a2a-dynamic-port-allocation"
+      description: "A2A server must use dynamic port allocation to prevent EADDRINUSE conflicts"
+      pattern: "EADDRINUSE.*port.*\\d+"
+      severity: "error"
+      auto_repairable: true
+      
+    - type: "port-management" 
+      rule: "no-hardcoded-ports"
+      description: "A2A services should not use hardcoded ports in production"
+      pattern: "port.*9090"
+      severity: "warning"
+      auto_repairable: true
+      
+  auto_repair_rules:
+    - violation: "port-conflict"
+      action: "suggest-dynamic-port"
+      suggestion: "Use dynamic port allocation: new A2AProtocol({ networking: { port: 0 } })"
+      workflow: "cloi a2a start --port 0"
+      
+  workflow_triggers:
+    - error_pattern: "EADDRINUSE"
+      suggested_action: "cloi workflow run auto-repair --scenario a2a-port-conflict"
+      tool_call: "a2a-dynamic-port-setup"
+      
+  research_integration:
+    - document: "docs/research/adr-driven-testing-research.md"
+      relevance: "A2A port conflicts as architectural governance issues"
+      
+  # NEW: Implementation metadata for self-implementing capabilities
+  implementation_metadata:
+    feature_requirements:
+      - name: "Dynamic Port Allocation Service"
+        description: "Implement intelligent port allocation to prevent EADDRINUSE conflicts"
+        complexity: "medium"
+        estimated_effort: "4-6 hours"
+        dependencies: ["ADR-001"]
+        
+      - name: "A2A Health Check System"
+        description: "Create comprehensive health monitoring for A2A protocol services"
+        complexity: "low"
+        estimated_effort: "2-3 hours"
+        dependencies: []
+        
+    implementation_strategy:
+      approach: "incremental"
+      test_driven: true
+      rollback_required: true
+      integration_points:
+        - "src/protocols/a2a/http-server.js"
+        - "src/protocols/a2a/index.js"
+        - "src/cli/index.js"
+        
+    ai_generation_context:
+      code_patterns:
+        - "Dynamic port allocation"
+        - "Service health monitoring"
+        - "Error recovery patterns"
+      architectural_constraints:
+        - "Maintain A2A protocol compatibility"
+        - "Follow existing error handling patterns"
+        - "Use existing logging infrastructure"
+      reference_implementations:
+        - "src/core/workflow-engine/index.js"
+        - "src/utils/networking.js"
+        
+    workflow_generation:
+      github_actions_template: "a2a-enhancement"
+      test_strategy: "unit-integration-e2e"
+      deployment_approach: "staged"
+      rollback_triggers:
+        - "test_failure_rate > 5%"
+        - "a2a_service_failure"
+        
+    success_criteria:
+      - "All A2A services use dynamic port allocation"
+      - "Zero EADDRINUSE conflicts in production"
+      - "Health check system provides 99% uptime visibility"
+      - "Implementation time < 10 hours"
+---
+
 # ADR-002: A2A Protocol Integration Architecture
 
 **Status:** Accepted  
